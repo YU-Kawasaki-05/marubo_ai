@@ -74,7 +74,7 @@
 ### スタッフ
 
 * Google ログイン（管理者ロール）
-* 会話検索（期間/ユーザー/教科タグ）
+* 会話検索（期間/ユーザー）
 * 会話詳細閲覧
 * 月次レポート受信（CSV/HTML）、**管理UIで手動リトライ**
 
@@ -92,7 +92,8 @@
 
 * **フロント**：Next.js 14+（App Router, TypeScript, Tailwind, Zustand）
   Markdown/LaTeX：`react-markdown` + `remark-gfm` + `remark-math` + `rehype-katex`
-* **バックエンド**：Supabase（Auth/Postgres/Storage）、Next.js Route Handlers（/app/api/\*\*, **Node.js runtime**）
+* **バックエンド**：Supabase（Auth/Postgres/Storage）、Next.js Route Handlers（/app/api/\*\*、 **Node.js runtime**）
+* **LLM**：プライマリ + フォールバック（可能な限り別ベンダー/エンドポイント）呼び出し
 * **メール**：Resend（送信ドメインは SPF/DKIM/DMARC 必須）
 * **スケジュール**：Vercel Cron（毎日 23:55 JST）
 * **テスト**：Vitest（`jsdom`）+ React Testing Library
@@ -110,7 +111,8 @@
          ├─ chat            : LLM呼び出し＋保存（Service RoleでDB書込）
          ├─ attachments/sign: 署名URL発行（Storage直PUT）
          ├─ reports/monthly : 集計→CSV/HTML→メール送信（Cron/手動）
-         └─ sync-user       : 初回ログイン同期（role付与）
+         ├─ sync-user       : 初回ログイン同期（role=student固定）
+         └─ admin/grant     : 管理者ロール付与（Service Role + 内部トークン）
 
 [Next.js on Vercel (Node runtime)] ── uses ── [Supabase]
                                           ├─ Auth (Google)
@@ -135,7 +137,9 @@
 │  │  ├─ chat/route.ts
 │  │  ├─ attachments/sign/route.ts
 │  │  ├─ reports/monthly/route.ts
-│  │  └─ sync-user/route.ts
+│  │  ├─ sync-user/route.ts
+│  │  └─ admin/
+│  │      └─ grant/route.ts      # 管理者ロール付与API（Service Role + 内部トークン必須）
 │  ├─ layout.tsx  # KaTeX CSSのimportをここで実施
 │  └─ page.tsx / globals.css
 ├─ src/
@@ -165,7 +169,7 @@
 
 ---
 
-## 环境変数
+## 環境変数
 
 ```ini
 # Supabase
@@ -173,17 +177,21 @@ NEXT_PUBLIC_SUPABASE_URL=
 NEXT_PUBLIC_SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=            # サーバーAPIのみ利用（Edge不可）
 
-# LLM
+# LLM（プライマリ）
 LLM_API_KEY=
 DEFAULT_MODEL=gpt-4o-mini
+
+# LLM（フォールバック用・別ベンダー/別エンドポイント推奨）
+LLM_FALLBACK_API_KEY=
 FALLBACK_MODEL=gpt-4o-mini
 TEMPERATURE=0.3
 MAX_TOKENS_OUT=800
 
 # App
 BASE_URL=http://localhost:3000
-ADMIN_EMAILS=staff1@example.com;staff2@example.com
+ADMIN_EMAILS=staff1@example.com;staff2@example.com  # S1通知先（ロール判定には不使用）
 DEV_ALERT_EMAILS=dev1@example.com
+ADMIN_TASK_TOKEN=                                  # /api/admin/grant 等の内部タスクAPI専用トークン
 MONTHLY_QUOTA=100
 MAX_IMAGE_LONGEDGE=1280
 APP_TIMEZONE=Asia/Tokyo
@@ -195,6 +203,10 @@ MAIL_FROM="noreply@your-domain.example"
 # Monitoring (任意)
 SENTRY_DSN=
 ```
+
+* `ADMIN_EMAILS`：S1 以上の重大障害をメール通知する宛先。ロール付与判定には使用しない。
+* `ADMIN_TASK_TOKEN`：`/api/admin/grant` など内部タスク API で `x-internal-token` ヘッダとして送信する固定値。Service Role Key と同様に厳重管理し、クライアントへは一切渡さない。
+* フォールバック用 LLM キーは可能な限り別ベンダー / 別エンドポイントとし、429 / 5xx / Timeout 時に `DEFAULT_MODEL` から `FALLBACK_MODEL` へ自動で切り替える。
 
 ---
 
@@ -269,15 +281,29 @@ create table if not exists monthly_summary (
 create table if not exists usage_counters (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references app_user(id) on delete cascade,
-  day date not null,              -- JST基準で付与
-  questions int not null default 0,
-  tokens_in int not null default 0,
-  tokens_out int not null default 0,
+  day date not null,              -- JST基準（(now() at time zone 'Asia/Tokyo')::date）で付与
+  questions int not null default 0 check (questions >= 0),
+  tokens_in int not null default 0 check (tokens_in >= 0),
+  tokens_out int not null default 0 check (tokens_out >= 0),
   created_at timestamptz default now(),
   unique(user_id, day)
 );
 create index if not exists idx_usage_user_day on usage_counters(user_id, day desc);
+
+-- 8) レート制限（N リクエスト / window）
+create table if not exists rate_limiter (
+  key text not null,
+  window_start timestamptz not null,
+  count int not null default 0 check (count >= 0),
+  primary key (key, window_start)
+);
+create index if not exists idx_rate_limiter_key on rate_limiter(key);
 ```
+
+* `usage_counters.day` は API 層で `(now() at time zone 'Asia/Tokyo')::date` を用いて JST 基準で算出し、CHECK 制約によりマイナス値の混入を即座に検知する。
+* `rate_limiter.key` には `chat:user:{user_id}` や `chat:ip:{ip}` などの識別子を格納し、`window_start` には `date_trunc('minute', now())` など固定長ウィンドウの先頭を保存する。
+* API からは `select allow_request('chat:user:xxx', 10, 60);` のような Postgres 関数（例：`allow_request(p_key text, p_limit int, p_window_seconds int)`）を呼び出し、false の場合は HTTP 429 を返して処理を中断する。
+* 将来的に全文検索を高速化する場合は、`message.text` や `conversation.subject` に `pg_trgm` / `tsvector` インデックスを加える余地がある。
 
 ### RLS/ポリシー
 
@@ -289,21 +315,23 @@ alter table attachment      enable row level security;
 alter table monthly_summary enable row level security;
 alter table usage_counters  enable row level security;
 
-create or replace function app_current_role()
-returns role_t language sql stable as $$
-  select role from app_user where auth_uid = auth.uid()
-$$;
-
--- select: 学生=自分のみ、スタッフ=全件
+-- JWT の app_metadata.role（student / staff）を参照して RLS 判定
 create policy app_user_select on app_user
 for select to authenticated
-using (auth_uid = auth.uid() or app_current_role() = 'staff');
+using (
+  auth_uid = auth.uid()
+  or (auth.jwt() -> 'app_metadata' ->> 'role') = 'staff'
+);
 
 create policy conversation_select on conversation
 for select to authenticated
 using (
-  exists (select 1 from app_user u where u.id = conversation.user_id and u.auth_uid = auth.uid())
-  or app_current_role() = 'staff'
+  exists (
+    select 1 from app_user u
+    where u.id = conversation.user_id
+      and u.auth_uid = auth.uid()
+  )
+  or (auth.jwt() -> 'app_metadata' ->> 'role') = 'staff'
 );
 
 create policy message_select on message
@@ -312,8 +340,10 @@ using (
   exists (
     select 1 from conversation c
     join app_user u on u.id = c.user_id
-    where c.id = message.conv_id and u.auth_uid = auth.uid()
-  ) or app_current_role() = 'staff'
+    where c.id = message.conv_id
+      and u.auth_uid = auth.uid()
+  )
+  or (auth.jwt() -> 'app_metadata' ->> 'role') = 'staff'
 );
 
 create policy attachment_select on attachment
@@ -323,27 +353,38 @@ using (
     select 1 from message m
     join conversation c on c.id = m.conv_id
     join app_user u on u.id = c.user_id
-    where m.id = attachment.message_id and u.auth_uid = auth.uid()
-  ) or app_current_role() = 'staff'
+    where m.id = attachment.message_id
+      and u.auth_uid = auth.uid()
+  )
+  or (auth.jwt() -> 'app_metadata' ->> 'role') = 'staff'
 );
 
 create policy monthly_summary_select on monthly_summary
 for select to authenticated
 using (
-  exists (select 1 from app_user u where u.id = monthly_summary.user_id and u.auth_uid = auth.uid())
-  or app_current_role() = 'staff'
+  exists (
+    select 1 from app_user u
+    where u.id = monthly_summary.user_id
+      and u.auth_uid = auth.uid()
+  )
+  or (auth.jwt() -> 'app_metadata' ->> 'role') = 'staff'
 );
 
 create policy usage_counters_select on usage_counters
 for select to authenticated
 using (
-  exists (select 1 from app_user u where u.id = usage_counters.user_id and u.auth_uid = auth.uid())
-  or app_current_role() = 'staff'
+  exists (
+    select 1 from app_user u
+    where u.id = usage_counters.user_id
+      and u.auth_uid = auth.uid()
+  )
+  or (auth.jwt() -> 'app_metadata' ->> 'role') = 'staff'
 );
 
--- 書き込みは原則 Service Role 経由（APIルートのみ）※RLS不要
--- クライアント直書き込みは不可の運用（安全のため）
+-- 書き込みは原則 Service Role 経由（API ルートのみ）。クライアント直書き込みは禁止。
 ```
+
+Supabase Auth の `app_metadata.role` は `/api/admin/grant` といった内部 API だけが更新し、JWT に `student` / `staff` を埋め込んだ状態でクライアントへ発行する。RLS は常にこの JWT を参照してスタッフ判定を行う。
 
 ### Storage バケット/ポリシー
 
@@ -367,7 +408,7 @@ using (
   (
     -- 自分のユーザーID配下
     name like ( (select id::text from app_user where auth_uid = auth.uid()) || '/%' )
-    or app_current_role() = 'staff'
+    or (auth.jwt() -> 'app_metadata' ->> 'role') = 'staff'
   )
 );
 ```
@@ -376,8 +417,9 @@ using (
 
 ### クォータ/レート制限テーブル
 
-* `usage_counters` を API で1リクエストごとに **「JSTの当日行を upsert し増分」**
-* **月間クォータ**は `sum(questions)` を当月で集計して判定
+* `usage_counters` を API で1リクエストごとに **「JSTの当日行を upsert し増分」** し、CHECK 制約で値の下振れを防ぐ。
+* **月間クォータ**は `sum(questions)` を当月で集計して判定。
+* `rate_limiter` テーブルは `allow_request()` 関数と組み合わせ、1分あたり N リクエストなどのレート制限を実現し、超過時は HTTP 429 を返す。
 
 ---
 
@@ -437,16 +479,18 @@ pnpm format
 ## 認証システム
 
 * **Supabase Auth（Google）**
-* 初回ログイン → `/api/sync-user` が **Service Role** で `app_user` を upsert（`email`は小文字化、`ADMIN_EMAILS` に一致すれば `staff`）
-* **クライアントからのDB書込は禁止**（Service Role API 経由のみ）
-* RLS で **生徒=自分のみ / スタッフ=全件**
+* 初回ログイン → `/api/sync-user` が **Service Role** で `app_user` を upsert（`email` は小文字化し、`role` は常に `student` で作成/更新）
+* `staff` へのロール昇格は `/api/admin/grant` など **Service Role + `x-internal-token: ${ADMIN_TASK_TOKEN}`** を要求する内部 API のみが実施し、Supabase Auth の `app_metadata.role` と `app_user.role` を同期させる
+* 発行された JWT の `app_metadata.role` を RLS が参照し、**生徒=自分のみ / スタッフ=全件** を保証
+* **クライアントからの DB 書き込みは禁止**（Service Role を使うサーバー API 経由のみ）
 
 ---
 
 ## 表示（Markdown/LaTeX）
 
-* `react-markdown` + `remark-gfm` + `remark-math` + `rehype-katex`
-* `app/layout.tsx` で **`import 'katex/dist/katex.min.css'`** を読み込む
+* `react-markdown` + `remark-gfm` + `remark-math` + `rehype-katex` + `rehype-sanitize`
+* `rehype-sanitize` のスキーマをカスタマイズし、`<script>` / `onerror` / `javascript:` プロトコルなどは拒否しつつ、KaTeX が利用する `span.katex*` や `div.katex-display` などのクラスは許可する
+* `app/layout.tsx` で **`import 'katex/dist/katex.min.css'`** を読み込み、数式表示を統一
 * コードブロックは横スクロール、モバイルでの改行/折返し最適化
 
 ---
@@ -454,7 +498,9 @@ pnpm format
 ## エラー対処設計
 
 * 例外は **`AppError` に正規化**（種別/重大度/通知先）。`withHandledErrors()` で API をラップ
-* LLM 呼び出しは **再試行→フォールバック**、429/5xx/Timeout を吸収
+* LLM 呼び出しは **15 秒程度のタイムアウト + バックオフ再試行 → フォールバックモデル**（可能な限り別ベンダー）を順に試行し、429/5xx/Timeout を吸収
+* UI には初回失敗時点で「混雑中。自動再試行中…」など即時フィードバックを出し、全経路失敗時は「時間をおいて再実行してください」と案内しつつ S1 相当の通知を送る
+* `rate_limiter` 関数で短時間の過負荷を検知した場合は **HTTP 429** を返し、クライアントに再試行までの待機を指示
 * 重大度 S1 以上で **Resend メール通知**（`ADMIN_EMAILS` / `DEV_ALERT_EMAILS`）
 * Cron は **段階保存（集計→生成→送信）**＋**手動リトライAPI**
 * すべての API レスポンスに **`requestId`** を付与
@@ -465,13 +511,52 @@ pnpm format
 
 ## セキュリティ/ヘッダ
 
-* **Service Role Key はサーバーAPIのみ**（`runtime: 'nodejs'`）。**Edge Runtime不可**
-* Next.js ヘッダ（例）
+* **Service Role Key は Node.js ランタイムのサーバー API だけで使用し、CSP/環境変数のいずれにおいてもクライアントからアクセスできないことを保証**（Edge Runtime では扱わない）。
+* 本番では `Content-Security-Policy` を `default-src 'self'` ベースで定義し、必要な外部ドメインのみ `img-src` や `connect-src` に許可する。開発では `script-src` に `'unsafe-eval'` を許容してもよいが、本番では禁止する。
+* 併せて `X-Content-Type-Options: nosniff`、`Strict-Transport-Security`、`Referrer-Policy: strict-origin-when-cross-origin`、`Permissions-Policy`、`X-Frame-Options: DENY` を適用する。
+* Next.js では下記のように環境ごとに CSP を切り替える：
 
-  * `Content-Security-Policy`（外部ドメイン最小化）
-  * `Referrer-Policy: strict-origin-when-cross-origin`
-  * `Permissions-Policy`（カメラ/マイク等を必要最小限）
-* Resend 送信ドメインに **SPF/DKIM/DMARC** 設定（必須）
+```js
+// next.config.js
+const isDev = process.env.NODE_ENV !== 'production'
+
+const IMG = ["'self'", 'https://*.supabase.co']
+const CONNECT = ["'self'", 'https://*.supabase.co']
+
+const csp = [
+  "default-src 'self'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  isDev
+    ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'"
+    : "script-src 'self'",
+  `img-src ${IMG.join(' ')}`,
+  `connect-src ${CONNECT.join(' ')}`,
+  "style-src 'self' 'unsafe-inline'",
+  "font-src 'self'",
+  "frame-ancestors 'none'",
+].join('; ')
+
+module.exports = {
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          { key: 'Content-Security-Policy', value: csp },
+          { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Strict-Transport-Security', value: 'max-age=31536000; includeSubDomains; preload' },
+          { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=()' },
+          { key: 'X-Frame-Options', value: 'DENY' },
+        ],
+      },
+    ]
+  },
+}
+```
+
+* Resend 送信ドメインには **SPF/DKIM/DMARC** を必ず設定する。
 
 ---
 
@@ -504,6 +589,7 @@ pnpm format
 
 * GitHub Actions：Lint → TypeCheck → Test → Build
 * `build` に必要な最低限の ENV（公開可のもの）を `env` に注入するか、**CI では build をスキップ**してもよい（Preview はVercel側で）
+* `pnpm build` を CI で実行する場合でも、`SUPABASE_SERVICE_ROLE_KEY` や `RESEND_API_KEY` などサーバー専用シークレットは注入せず、`NEXT_PUBLIC_*` のみ許可する
 
 ```yaml
 name: CI
@@ -542,6 +628,11 @@ jobs:
 * `describe` は **日本語**、境界/エラー系も含める
 * 変更時は **`pnpm test` が常時パス**
 * UI は React Testing Library
+* **RLS テスト**：学生アカウントでは自分の会話のみ、スタッフアカウントでは全件が取得できることを Supabase クライアント or SQL で検証
+* **レート制限テスト**：同一キーで上限直前までは許可され、上限を超えると HTTP 429 相当で拒否されること
+* **Markdown/LaTeX サニタイズ**：`<script>` や `javascript:` プロトコルが除去されつつ、KaTeX のクラスは残り表示が崩れないこと
+* **LLM フォールバック動作**：プライマリが 429/5xx/Timeout の際にフォールバックが呼ばれ、両方失敗時は UI へ適切なエラーを返す
+* **E2E（任意）**：ログイン → チャット投稿（テキスト + 数式）→ レンダリング → 履歴表示までの最低限のシナリオ
 
 ---
 
@@ -664,6 +755,8 @@ module.exports = {
 * LLM 障害/429 で**即時案内＋自動再試行/フォールバック**
 * すべての API が **`requestId`** を返し、S1 以上は**メール通知**
 * `pnpm test` / `pnpm typecheck` / `pnpm lint` / `pnpm build` が成功
+* **SLO 例**：テキストのみの質問に対する p95 応答時間 3 秒以内（平常時）
+* **SLO 例**：LLM API 障害時にフォールバックで救済できる割合を 80% 以上に維持
 
 ---
 

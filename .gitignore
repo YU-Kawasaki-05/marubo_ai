@@ -1,5 +1,7 @@
 # Documentation and notes (not for git tracking)
 /docs/
+/prompt/
+/memo/
 
 # Node modules
 node_modules/
