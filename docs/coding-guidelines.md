@@ -49,7 +49,9 @@ src/
 │  ├─ auth/         (guard.ts, getSession.ts, SignInButton.tsx)
 │  ├─ chat/         (sendMessage.ts, compressImage.ts, quota.ts, UI)
 │  ├─ conversations/ (queries.ts, UI)
-│  ├─ admin/        (search.ts, AdminTable.tsx)
+│  ├─ admin/
+│  │  ├─ search/    (AdminTable.tsx, useConversationSearch.ts)
+│  │  └─ allowlist/ (AllowedEmailTable.tsx, useAllowlistMutations.ts)
 │  └─ reports/      (monthlySql.ts, toCsv.ts, jobs/runMonthly.ts)
 ├─ shared/
 │  ├─ lib/          (supabaseClient.ts, llm.ts, errors.ts, ...)

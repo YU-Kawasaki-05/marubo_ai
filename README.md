@@ -106,14 +106,34 @@ pnpm dev
 
 ```
 .
-├─ app/              # Next.js App Router（ルーティング）
+├─ app/
+│  ├─ chat/page.tsx
+│  ├─ admin/
+│  │  ├─ page.tsx              # 会話検索 UI
+│  │  └─ allowlist/page.tsx    # 許可メール管理 UI（staff 限定）
+│  ├─ api/
+│  │  ├─ chat/route.ts
+│  │  ├─ attachments/sign/route.ts
+│  │  ├─ reports/monthly/route.ts
+│  │  ├─ sync-user/route.ts
+│  │  └─ admin/
+│  │      ├─ grant/route.ts
+│  │      └─ allowlist/route.ts
+│  └─ layout.tsx / page.tsx / globals.css
 ├─ src/
-│  ├─ features/      # 機能単位（auth, chat, conversations, admin, reports）
-│  └─ shared/        # 共通（lib, components, hooks, types, utils）
-├─ docs/             # 設計・運用ドキュメント
-├─ public/           # 静的ファイル（KaTeX assets 等）
-├─ scripts/          # Seed 等
-├─ tests/            # 統合/E2E（任意）
+│  ├─ features/
+│  │  ├─ auth/
+│  │  ├─ chat/
+│  │  ├─ conversations/
+│  │  ├─ admin/
+│  │  │  ├─ search/            # スタッフ会話検索
+│  │  │  └─ allowlist/         # 許可メール UI ロジック
+│  │  └─ reports/
+│  └─ shared/                  # 共通（lib, components, hooks, types, utils）
+├─ docs/                       # 設計・運用ドキュメント
+├─ public/                     # 静的ファイル（KaTeX assets 等）
+├─ scripts/                    # Seed/Import (`seed-allowlist.ts` など)
+├─ tests/                      # 統合/E2E（任意）
 ├─ .env.example
 ├─ package.json
 ├─ vitest.config.ts
@@ -213,7 +233,7 @@ docs: READMEを更新
 
 ## データベース
 
-* **Postgres (Supabase)**：app_user, conversation, message, attachment, monthly_summary, usage_counters, rate_limiter
+* **Postgres (Supabase)**：allowed_email, app_user, conversation, message, attachment, monthly_summary, usage_counters, rate_limiter
 * **RLS**：学生=自分のみ、スタッフ=全件
 * **Storage**：attachments バケット（署名 URL）
 
@@ -224,6 +244,7 @@ docs: READMEを更新
 ## 認証・セキュリティ
 
 * **Supabase Auth (Google OAuth)**
+* **許可メールリスト**：`allowed_email` テーブルに登録された `status='active'` の Gmail のみ `/api/sync-user` が受け付ける
 * **JWT の `app_metadata.role`** で権限制御（student/staff）
 * **Service Role は Node.js ランタイムのサーバー API のみで使用**
 * **CSP/HSTS/X-Frame-Options** などのセキュリティヘッダ適用

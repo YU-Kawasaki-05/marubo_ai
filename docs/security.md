@@ -17,9 +17,9 @@
 ### Supabase Auth（Google OAuth）
 
 * **プロバイダー**：Google OAuth 2.0
-* **初回ログイン**：`/api/sync-user` が **Service Role** で `app_user` テーブルに upsert
-  * `email` は小文字化して保存
-  * `role` は常に `student` で作成/更新
+* **初回ログイン**：`/api/sync-user` が **Service Role** で `allowed_email` テーブルを照合し、`status = 'active'` のメールのみ `app_user` に upsert
+  * `email` は小文字化して保存（`allowed_email` / `app_user` どちらも小文字一意）
+  * `role` は常に `student` で作成/更新。許可リストに無いメールは 403 を返し、クライアントに「塾に連絡してください」と表示する
 * **ロール昇格**：`/api/admin/grant` など **Service Role + `x-internal-token: ${ADMIN_TASK_TOKEN}`** を要求する内部 API のみが実施
   * Supabase Auth の `app_metadata.role` と `app_user.role` を同期
 * **JWT 発行**：`app_metadata.role` を含む JWT をクライアントへ発行
@@ -37,8 +37,8 @@
 4. Supabase が JWT を発行（初回は app_metadata.role = null）
    ↓
 5. クライアントが /api/sync-user を呼び出し
-   ↓
-6. Service Role で app_user テーブルに upsert（role = 'student'）
+  ↓
+6. Service Role で allowed_email を照合し、`status='active'` なら app_user テーブルに upsert（role = 'student'）
    ↓
 7. （必要に応じて）管理者が /api/admin/grant を実行し role = 'staff' に昇格
    ↓
@@ -59,8 +59,9 @@
 
 * **Node.js ランタイムのサーバー API のみ**
   * `/app/api/chat/route.ts` — LLM 応答を DB に保存
-  * `/app/api/sync-user/route.ts` — 初回ログイン時のユーザー作成
+  * `/app/api/sync-user/route.ts` — 初回ログイン時の許可リスト照合 + ユーザー作成
   * `/app/api/admin/grant/route.ts` — ロール昇格（内部トークン必須）
+  * `/app/api/admin/allowlist/route.ts` — 許可メールリスト CRUD（staff UI から呼び出す）
   * `/app/api/reports/monthly/route.ts` — 月次集計
 
 ### ❌ 使用が禁止される場所
@@ -74,6 +75,34 @@
 * RLS を**バイパス**するため、WHERE 句で必ず `user_id` などを検証
 * 意図しないデータ削除/更新を防ぐため、トランザクションと検証を徹底
 * ログに Service Role 使用箇所を記録し、監査可能にする
+
+---
+
+## 許可メールリスト（allowed_email）
+
+### ステータスと運用
+
+| status    | 役割 | /api/sync-user の動作 | スタッフ UI での表示 |
+|-----------|------|------------------------|----------------------|
+| `active`  | 利用可能 | `app_user` に upsert しログイン完了 | 緑バッジ | 
+| `pending` | 連絡待ち／利用開始前 | HTTP 409 を返し、画面で「まだ利用開始できません」メッセージを表示 | 黄バッジ + 備考必須 |
+| `revoked` | 退会 / 一時停止 | HTTP 403 を返し、ログインできない | 赤バッジ | 
+
+* すべてのメールアドレスは小文字で保存する（`allowed_email_lowercase` 制約）。
+* 退会処理は `status='revoked'` に変更するだけで即時にログインを抑止できる。
+* 受験期など大量更新時は `scripts/seed-allowlist.ts <csv>` を走らせてバルク upsert する。
+
+### RLS ポリシー
+
+* **select/insert/update/delete** は `staff` ロールのみ許可。
+* `/app/api/admin/allowlist/route.ts` では Service Role を使うため、必ず `where email ilike any($1)` など絞り込みを行い不正更新を防ぐ。
+* ログには `requestId`, `staffUserId`, `operation`（add/activate/revoke/import）を残し、最低 90 日保管する。
+
+### 管理 UI の要件
+
+* `/admin/allowlist` は `requireStaff()` を通過したユーザーのみ表示し、`allowed_email` の一覧/編集/検索を提供する。
+* 変更はすべて `/api/admin/allowlist` API 経由で行い、UI 側ではメールアドレスの正規化（trim + lowercase）を行う。
+* CSV インポート/エクスポートは任意だが、アップロード時は 500 行以内に分割し、1 リクエストでトランザクション処理する。
 
 ---
 

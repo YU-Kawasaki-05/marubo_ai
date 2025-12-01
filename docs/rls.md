@@ -15,12 +15,18 @@
 ### RLS/ポリシー
 
 ```sql
+alter table allowed_email   enable row level security;
 alter table app_user        enable row level security;
 alter table conversation    enable row level security;
 alter table message         enable row level security;
 alter table attachment      enable row level security;
 alter table monthly_summary enable row level security;
 alter table usage_counters  enable row level security;
+
+create policy allowed_email_staff_only on allowed_email
+for all to authenticated
+using ((auth.jwt() -> 'app_metadata' ->> 'role') = 'staff')
+with check ((auth.jwt() -> 'app_metadata' ->> 'role') = 'staff');
 
 -- JWT の app_metadata.role（student / staff）を参照して RLS 判定
 create policy app_user_select on app_user
@@ -247,3 +253,5 @@ RLS ポリシーが適用されているか、Index Scan が使われている�
 ```
 
 Supabase Auth の `app_metadata.role` は `/api/admin/grant` といった内部 API だけが更新し、JWT に `student` / `staff` を埋め込んだ状態でクライアントへ発行する。RLS は常にこの JWT を参照してスタッフ判定を行う。
+
+`allowed_email` テーブルは **全操作を `staff` のみに制限**するため、`using/with check` いずれも `role = 'staff'` 判定とし、学生アカウントからの参照を完全に遮断する。スタッフ UI は `/admin/allowlist` で `requireStaff()` を通したうえで、Service Role API を叩いて更新する。

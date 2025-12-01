@@ -83,14 +83,17 @@
 .
 ├─ app/
 │  ├─ chat/page.tsx
-│  ├─ admin/page.tsx
+│  ├─ admin/
+│  │  ├─ page.tsx                 # 会話検索/閲覧
+│  │  └─ allowlist/page.tsx       # 許可メール管理
 │  ├─ api/
 │  │  ├─ chat/route.ts
 │  │  ├─ attachments/sign/route.ts
 │  │  ├─ reports/monthly/route.ts
 │  │  ├─ sync-user/route.ts
 │  │  └─ admin/
-│  │      └─ grant/route.ts      # 管理者ロール付与API（Service Role + 内部トークン必須）
+│  │      ├─ grant/route.ts       # 管理者ロール付与（Service Role + 内部トークン）
+│  │      └─ allowlist/route.ts   # 許可メール CRUD（staff UI 用）
 │  ├─ layout.tsx  # KaTeX CSSのimportをここで実施
 │  └─ page.tsx / globals.css
 ├─ src/
@@ -98,7 +101,9 @@
 │  │  ├─ auth/           (guard.ts, getSession.ts, SignInButton.tsx)
 │  │  ├─ chat/           (sendMessage.ts, compressImage.ts, quota.ts, validators.ts, UI)
 │  │  ├─ conversations/  (queries.ts, UI)
-│  │  ├─ admin/          (search.ts, AdminTable.tsx)
+│  │  ├─ admin/
+│  │  │  ├─ search/      (AdminTable.tsx など会話検索)
+│  │  │  └─ allowlist/   (AllowedEmailTable.tsx, useAllowlistMutations.ts)
 │  │  └─ reports/        (monthlySql.ts, toCsv.ts, jobs/runMonthly.ts)
 │  ├─ shared/
 │  │  ├─ lib/            (supabaseClient.ts, supabaseAdmin.ts, llm.ts, mailer.ts,
@@ -123,11 +128,21 @@
 ## 認証システム（概要）
 
 * **Supabase Auth（Google OAuth）**を使用
-* 初回ログイン時に `/api/sync-user` で `app_user` テーブルに upsert（role は student 固定）
+* 初回ログイン時に `/api/sync-user` で `allowed_email` テーブル（`status = 'active'`）を参照し、許可されているメールかをチェック → OK なら `app_user` に upsert（role は student 固定）
 * スタッフへの昇格は `/api/admin/grant` で実施（内部トークン必須）
 * JWT の `app_metadata.role` を RLS が参照し、権限を制御
 
 詳細は [セキュリティポリシー](./security.md) を参照。
+
+### 生徒オンボーディングの流れ
+
+1. **スタッフが許可リストを登録**：`allowed_email` テーブル（将来的には `/admin/allowlist` UI）に Gmail アドレスを `status='active'` で追加。退会時は `revoked` に変更すると即座にログイン不可になる。
+2. **生徒が Google ログイン**：Supabase Auth が JWT を発行し、Next.js クライアントが `/api/sync-user` を叩く。
+3. **サーバー側チェック**：Route Handler が Service Role で `allowed_email` を照合。存在しなければ HTTP 403 / `pending` の場合は 409 を返し、フロントで「まだ利用開始できません」と案内。
+4. **app_user 作成**：許可されていれば `app_user` に upsert。以後は RLS により本人データのみ閲覧可。
+5. **権限変更**：必要に応じて `/api/admin/grant` で `staff` に昇格。許可リスト自体は `staff` しか閲覧できない。
+
+> **季節トラフィックへの備え**：許可リストは CSV/Spreadsheet からバッチ登録できる seed スクリプト（例：`pnpm tsx scripts/seed-allowlist.ts spreadsheet.csv`）を用意すると、受験期の一括登録に対応しやすい。
 
 ---
 
@@ -213,6 +228,7 @@ const customSchema = {
 * **会話検索**：期間/ユーザーでフィルタリング
 * **会話詳細閲覧**：メッセージ一覧、画像表示、タイムスタンプ
 * **月次レポート手動リトライ**：対象月を指定して再実行
+* **許可メール管理（/admin/allowlist）**：`allowed_email` の登録/状態変更/CSV インポート。`status` ごとに色分けし、変更履歴を `audit_allowlist` に記録
 
 ### アクセス制御
 

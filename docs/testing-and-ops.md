@@ -15,7 +15,7 @@ pnpm format
 
 ### データベース操作
 
-* 初期は Supabase **SQL Editor** で `docs/db-schema.md` に記載の SQL を適用
+* 初期は Supabase **SQL Editor** で `docs/database.md` に記載の SQL を適用
 * 将来は Supabase CLI の migration に移行推奨
 * Seed は `scripts/` 配下
 

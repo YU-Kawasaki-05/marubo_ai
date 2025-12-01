@@ -35,7 +35,23 @@ create table if not exists app_user (
   constraint email_lowercase check (email = lower(email))
 );
 
--- 3) 会話
+-- 3) 許可メールリスト
+create table if not exists allowed_email (
+  email text primary key,
+  status text not null check (status in ('active','pending','revoked')),
+  label text,
+  invited_at timestamptz,
+  expires_at timestamptz,
+  notes text,
+  created_by uuid references app_user(id) on delete set null,
+  updated_at timestamptz default now(),
+  created_at timestamptz default now(),
+  constraint allowed_email_lowercase check (email = lower(email))
+);
+
+create index if not exists idx_allowed_email_status on allowed_email(status);
+
+-- 4) 会話
 create table if not exists conversation (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references app_user(id) on delete cascade,
@@ -44,7 +60,7 @@ create table if not exists conversation (
 );
 create index if not exists idx_conversation_user_created on conversation(user_id, created_at desc);
 
--- 4) メッセージ
+-- 5) メッセージ
 create table if not exists message (
   id uuid primary key default gen_random_uuid(),
   conv_id uuid not null references conversation(id) on delete cascade,
@@ -57,7 +73,7 @@ create table if not exists message (
 );
 create index if not exists idx_message_conv_created on message(conv_id, created_at);
 
--- 5) 添付
+-- 6) 添付
 create table if not exists attachment (
   id uuid primary key default gen_random_uuid(),
   message_id uuid not null references message(id) on delete cascade,
@@ -66,7 +82,7 @@ create table if not exists attachment (
   width int, height int, size_bytes int
 );
 
--- 6) 月次サマリ
+-- 7) 月次サマリ
 create table if not exists monthly_summary (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references app_user(id) on delete cascade,
@@ -79,7 +95,7 @@ create table if not exists monthly_summary (
   unique(user_id, month)
 );
 
--- 7) 利用カウンタ（クォータ/レート制限用）
+-- 8) 利用カウンタ（クォータ/レート制限用）
 create table if not exists usage_counters (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references app_user(id) on delete cascade,
@@ -92,7 +108,7 @@ create table if not exists usage_counters (
 );
 create index if not exists idx_usage_user_day on usage_counters(user_id, day desc);
 
--- 8) レート制限（N リクエスト / window）
+-- 9) レート制限（N リクエスト / window）
 create table if not exists rate_limiter (
   key text not null,
   window_start timestamptz not null,
@@ -102,6 +118,8 @@ create table if not exists rate_limiter (
 create index if not exists idx_rate_limiter_key on rate_limiter(key);
 ```
 
+* `allowed_email.status` は `active`（利用可）/`pending`（まだ利用不可）/`revoked`（退会済み）の 3 値で管理する。`/app/api/sync-user` は `active` のみユーザー作成を許可し、それ以外は 403 を返して UI に「塾に連絡してください」のメッセージを表示する。
+* `allowed_email` はスタッフのみ閲覧・編集できるよう、RLS で `(auth.jwt() -> 'app_metadata' ->> 'role') = 'staff'` のみ select/insert/update/delete を許可する。Service Role API（管理 UI や seed script）ではバルク登録が可能。
 * `usage_counters.day` は API 層で `(now() at time zone 'Asia/Tokyo')::date` を用いて JST 基準で算出し、CHECK 制約によりマイナス値の混入を即座に検知する。
 * `rate_limiter.key` には `chat:user:{user_id}` や `chat:ip:{ip}` などの識別子を格納し、`window_start` には `date_trunc('minute', now())` など固定長ウィンドウの先頭を保存する。
 * API からは `select allow_request('chat:user:xxx', 10, 60);` のような Postgres 関数（例：`allow_request(p_key text, p_limit int, p_window_seconds int)`）を呼び出し、false の場合は HTTP 429 を返して処理を中断する。
