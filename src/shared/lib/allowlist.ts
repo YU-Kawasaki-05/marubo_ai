@@ -102,7 +102,9 @@ export async function createAllowlistEntry(
     .select('*')
     .single()
 
-  if (error || !data) {
+  const inserted = data as AllowedEmailRow | null
+
+  if (error || !inserted) {
     throw new AppError(500, 'ALLOWLIST_INSERT_FAILED', '許可リストを登録できませんでした。')
   }
 
@@ -112,10 +114,10 @@ export async function createAllowlistEntry(
     email: normalizedEmail,
     staffUserId,
     prev: null,
-    next: summarizeAllowlistRow(data),
+    next: summarizeAllowlistRow(inserted),
   })
 
-  return data
+  return inserted
 }
 
 export async function updateAllowlistEntry(
@@ -137,14 +139,18 @@ export async function updateAllowlistEntry(
     .eq('email', normalizedEmail)
     .single()
 
-  if (existingError || !existing) {
+  const currentRow = existing as AllowedEmailRow | null
+
+  if (existingError || !currentRow) {
     throw new AppError(404, 'ALLOWLIST_NOT_FOUND', '対象のメールアドレスが存在しません。')
   }
 
-  const nextStatus = payload.status ? assertStatus(payload.status) : existing.status
-  assertStatusTransition(existing.status as AllowedEmailStatus, nextStatus)
-  const label = payload.label !== undefined ? ensureMaxLength(payload.label, LABEL_MAX_LENGTH) : existing.label
-  const notes = payload.notes !== undefined ? ensureMaxLength(payload.notes, NOTES_MAX_LENGTH) : existing.notes
+  const nextStatus = payload.status ? assertStatus(payload.status) : currentRow.status
+  assertStatusTransition(currentRow.status as AllowedEmailStatus, nextStatus)
+  const label =
+    payload.label !== undefined ? ensureMaxLength(payload.label, LABEL_MAX_LENGTH) : currentRow.label
+  const notes =
+    payload.notes !== undefined ? ensureMaxLength(payload.notes, NOTES_MAX_LENGTH) : currentRow.notes
   const now = new Date().toISOString()
 
   const { data, error } = await supabase
@@ -159,7 +165,9 @@ export async function updateAllowlistEntry(
     .select('*')
     .single()
 
-  if (error || !data) {
+  const updated = data as AllowedEmailRow | null
+
+  if (error || !updated) {
     throw new AppError(500, 'ALLOWLIST_UPDATE_FAILED', '許可リストを更新できませんでした。')
   }
 
@@ -168,11 +176,11 @@ export async function updateAllowlistEntry(
     operation: 'update',
     email: normalizedEmail,
     staffUserId,
-    prev: summarizeAllowlistRow(existing),
-    next: summarizeAllowlistRow(data),
+    prev: summarizeAllowlistRow(currentRow),
+    next: summarizeAllowlistRow(updated),
   })
 
-  return data
+  return updated
 }
 
 export function parseAllowlistCsv(csvText: string): CsvRecord[] {
@@ -252,12 +260,13 @@ export async function importAllowlistCsv(
     }
 
     const { data, error } = await supabase.from('allowed_email').insert(payloads).select('*')
+    const insertedRows = (data ?? []) as AllowedEmailRow[]
     if (error) {
       throw new AppError(500, 'ALLOWLIST_INSERT_FAILED', 'CSV の取り込みに失敗しました。')
     }
 
     await Promise.all(
-      (data ?? []).map((row) =>
+      insertedRows.map((row) =>
         recordAuditLog({
           requestId: options.requestId,
           operation: 'csv-import',
@@ -269,7 +278,7 @@ export async function importAllowlistCsv(
       ),
     )
 
-    return { inserted: data?.length ?? 0, updated: 0 }
+    return { inserted: insertedRows.length, updated: 0 }
   }
 
   const { data: previousRows } = await supabase
@@ -277,19 +286,22 @@ export async function importAllowlistCsv(
     .select('*')
     .in('email', emails)
 
-  const prevMap = new Map(previousRows?.map((row) => [row.email, summarizeAllowlistRow(row)]))
+  const prevRows = (previousRows ?? []) as AllowedEmailRow[]
+  const prevMap = new Map(prevRows.map((row) => [row.email, summarizeAllowlistRow(row)]))
 
   const { data, error } = await supabase
     .from('allowed_email')
     .upsert(payloads, { onConflict: 'email' })
     .select('*')
 
+  const upsertedRows = (data ?? []) as AllowedEmailRow[]
+
   if (error) {
     throw new AppError(500, 'ALLOWLIST_UPSERT_FAILED', 'CSV の上書きに失敗しました。')
   }
 
   await Promise.all(
-    (data ?? []).map((row) =>
+    upsertedRows.map((row) =>
       recordAuditLog({
         requestId: options.requestId,
         operation: 'csv-import',
@@ -301,8 +313,8 @@ export async function importAllowlistCsv(
     ),
   )
 
-  const updatedCount = data?.filter((row) => prevMap.has(row.email)).length ?? 0
-  const insertedCount = (data?.length ?? 0) - updatedCount
+  const updatedCount = upsertedRows.filter((row) => prevMap.has(row.email)).length
+  const insertedCount = upsertedRows.length - updatedCount
   return { inserted: insertedCount, updated: updatedCount }
 }
 
@@ -390,12 +402,17 @@ function checkCsvDuplicates(records: CsvRecord[]) {
   }
 }
 
-function summarizeAllowlistRow(row: AllowedEmailRow) {
+function summarizeAllowlistRow(row: AllowedEmailRow): AllowedEmailRow {
   return {
     email: row.email,
     status: row.status,
     label: row.label,
+    invited_at: row.invited_at,
+    expires_at: row.expires_at,
     notes: row.notes,
+    created_by: row.created_by,
+    updated_at: row.updated_at,
+    created_at: row.created_at,
   }
 }
 

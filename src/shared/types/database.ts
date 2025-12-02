@@ -78,15 +78,38 @@ export type Database = {
         Row: AllowedEmailRow
         Insert: AllowedEmailInsert
         Update: AllowedEmailUpdate
+        Relationships: []
       }
       app_user: {
         Row: AppUserRow
+        Insert: {
+          id?: string
+          auth_uid: string
+          email: string
+          display_name?: string | null
+          role?: AppUserRole
+          created_at?: string
+        }
+        Update: Partial<AppUserRow>
+        Relationships: []
       }
       audit_allowlist: {
         Row: AuditAllowlistRow
         Insert: AuditAllowlistInsert
-        Update: never
+        Update: Partial<AuditAllowlistRow>
+        Relationships: [
+          {
+            foreignKeyName: 'audit_allowlist_staff_user_id_fkey'
+            columns: ['staff_user_id']
+            referencedRelation: 'app_user'
+            referencedColumns: ['id']
+          },
+        ]
       }
     }
+    Views: Record<string, never>
+    Functions: Record<string, never>
+    Enums: Record<string, never>
+    CompositeTypes: Record<string, never>
   }
 }

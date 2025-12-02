@@ -6,18 +6,25 @@
  * セキュリティ：public key のみ利用。Service Role は別ファイルで管理する。
  */
 
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import type { Database } from '../types/database'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
-if (!supabaseUrl || !supabaseAnonKey) {
-  // eslint-disable-next-line no-console
-  console.warn('Supabase public env is not configured.')
+let cachedClient: SupabaseClient<Database> | null = null
+
+export function getSupabaseBrowserClient(): SupabaseClient<Database> {
+  if (cachedClient) {
+    return cachedClient
+  }
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    throw new Error('Supabase public env (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY) が未設定です。')
+  }
+
+  cachedClient = createClient<Database>(supabaseUrl, supabaseAnonKey)
+  return cachedClient
 }
 
-export const supabaseBrowserClient = createClient<Database>(
-  supabaseUrl ?? '',
-  supabaseAnonKey ?? '',
-)
+export const isSupabaseBrowserClientConfigured = Boolean(supabaseUrl && supabaseAnonKey)
