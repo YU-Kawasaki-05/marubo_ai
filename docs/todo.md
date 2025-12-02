@@ -14,8 +14,8 @@
 | ID | Status | 概要 | 詳細 |
 |----|--------|------|------|
 | SPEC-01 | todo | 許可メール運用詳細追記 | `docs/security.md` / `docs/architecture.md` に招待文面、CSV取り扱い、監査ログ保持期間を明記する。 |
-| SPEC-02 | todo | Allowlist UI/CSV 仕様確定 | `/admin/allowlist` のUX、バリデーション、CSV列定義、重複時の挙動を `docs/api.md` か専用ドキュメントに固定。 |
-| SPEC-03 | todo | `/api/sync-user` メッセージ定義 | `pending/revoked/not-found` それぞれのフロント表示文言と問い合わせ導線を `docs/api.md` に追加。 |
+| SPEC-02 | review | Allowlist UI/CSV 仕様確定 | `/admin/allowlist` のUX、バリデーション、CSV列定義、重複時の挙動を `docs/api.md` に追記済み。 |
+| SPEC-03 | review | `/api/sync-user` メッセージ定義 | `pending/revoked/not-found` のフロント表示文言と問い合わせ導線を `docs/api.md` に追加済み。 |
 | SPEC-04 | todo | 退会/削除ポリシー整理 | 会話・添付の保持期限、削除手順を `docs/database.md` と `docs/operational/runbook.md` に追記。 |
 | SPEC-05 | blocked | 保護者共有要件確認 | 許可リストの CSV を保護者に配布するか等、ユーザー確認が必要。回答待ち。 |
 
@@ -25,7 +25,7 @@
 |----|--------|------|------|
 | BE-01 | todo | `allowed_email` マイグレーション | `updated_by`, `label`, `notes`, `status` index、`allowed_email_lowercase` 制約を SQL に反映。 |
 | BE-02 | todo | `audit_allowlist` 追加 | 操作種別・差分を保存する監査テーブルと挿入処理を実装。 |
-| BE-03 | todo | `/api/admin/allowlist` 実装 | GET/POST/PATCH、CSV受け付け、リクエスト検証、`requestId` 付与、`staff` ガード。 |
+| BE-03 | review | `/api/admin/allowlist` 実装 | GET/POST/PATCH、CSV受け付け、リクエスト検証、`requestId` 付与、`staff` ガードを `app/api/admin/allowlist/*` で実装済み。 |
 | BE-04 | todo | `/api/sync-user` 拡張 | `allowed_email` 状態チェック、エラーコード、レスポンス payload を実装し、`app_user` upsert を idempotent に。 |
 | BE-05 | progress | seed/import スクリプト | `scripts/seed-allowlist.ts` (CSV→bulk upsert) と `export` スクリプトを作成。CSV バリデーションも含む。 |
 

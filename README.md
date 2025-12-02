@@ -72,10 +72,11 @@ pnpm dev
 
 ## ドキュメント
 
-詳細な設計・運用ドキュメントは `docs/` フォルダに格納されています。
+詳細な設計・運用ドキュメントは `docs/` フォルダに格納されています。まずは `docs/onboarding.md` を通読し、推奨フローとチェックリストを把握してから下記の個別ドキュメントを参照してください。
 
 | ドキュメント | 内容 |
 |------------|------|
+| [onboarding.md](./docs/onboarding.md) | 新規参画者/AI向けオンボーディングマップ、チェックリスト、推奨フロー |
 | [architecture.md](./docs/architecture.md) | 全体アーキテクチャ、機能一覧、技術スタック、ディレクトリ構成、認証、Markdown/LaTeX、受け入れ基準 |
 | [database.md](./docs/database.md) | テーブル設計、インデックス、ER 図、データ保持・削除ポリシー |
 | [rls.md](./docs/rls.md) | RLS ポリシー、JWT クレーム、Service Role の扱い、テスト方法 |

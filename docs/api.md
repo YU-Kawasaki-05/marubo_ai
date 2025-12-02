@@ -56,6 +56,17 @@
 | `allowed_email.status = 'revoked'` | 403 | `ALLOWLIST_REVOKED` | 退会済みメッセージ + 塾への連絡を促す |
 | 該当メールなし | 403 | `ALLOWLIST_NOT_FOUND` | 不正アクセス扱い。`ADMIN_EMAILS` に通知 |
 
+### フロント表示メッセージと問い合わせ導線
+
+| ステータス | タイトル | 本文例 | CTA |
+|------------|----------|--------|-----|
+| `pending` | 「利用開始準備中です」 | `まだ入塾手続き（またはスタッフによる承認）が完了していません。手続き完了後に再度ログインしてください。` | `support@{塾ドメイン}`（`NEXT_PUBLIC_SUPPORT_EMAIL`） への `mailto:` ボタン「スタッフに連絡する」。本文末尾で `requestId` を表示し、連絡時に共有してもらう。 |
+| `revoked` | 「アカウントが停止されています」 | `このメールアドレスは退会または一時停止状態です。心当たりがない場合はスタッフへご連絡ください。` | 同じく `mailto:` ボタン + 退会理由がある場合は `notes` を UI で表示して補足。 |
+| `not-found` | 「許可されていないメールアドレスです」 | `登録されていない Google アカウントでログインしています。別のアカウントをお試しの上、不明点はスタッフへご連絡ください。` | `mailto:` ボタンと `/admin/form/contact` 等問い合わせフォーム（`NEXT_PUBLIC_SUPPORT_FORM_URL`）リンクを併記。 |
+
+* CTA に使用するメールアドレス/フォーム URL は環境変数で注入し、ビルドなしに差し替えられるようにする。
+* `ALLOWLIST_NOT_FOUND` を表示した際は `requestId` を UI に必ず表示し、サポート連絡時に添付してもらうことで監査ログと照合できる。
+
 ### バリデーション
 
 * `email` は Supabase Auth から取得し、常に `lowercase(trim)` して照合。
@@ -131,6 +142,42 @@
 
 * 変更イベントは `audit_allowlist`（Supabase Logflare or Postgres テーブル）に `requestId`, `email`, `prev`, `next`, `staffUserId` を保存する。
 * 90 日以上の保管を推奨。
+
+### `/admin/allowlist` UI/UX ガイドライン
+
+* 画面構成
+	* 上部に検索ボックス + `status` 絞り込み（`all / active / pending / revoked`）。デフォルトは `active`。
+	* テーブル列：`email`, `status`（色付きバッジ）, `label`, `notes`（最大 2 行まで省略表示）, `updatedAt`（相対時刻 + tooltip ISO）, `updatedBy`（displayName or email）, `requestId`（クリックでコピー）。
+	* 行アクション：`編集`（モーダルで status/label/notes 変更）、`履歴`（今後の `audit_allowlist` 表示予定）。
+* バリデーション
+	* `email`：必須。`lowercase(trim)`、最大 320 文字、`@gmail.com`（または指定ドメイン）以外は ⚠️ として保存前に確認ダイアログを出す。
+	* `status`：必須。遷移ルールは API セクションの通りで、UI 側でも制御。
+	* `label`：0-64 文字。空の場合は `-` 表示。
+	* `notes`：0-512 文字。`pending` の場合は必須（利用開始予定日や理由を記載してもらう）。
+* フィードバック
+	* POST/PATCH/CSV 完了時はトーストに `requestId` を表示し、ユーザーがコピーできるようにする。
+	* エラー時は API の `error.code` に応じたメッセージ（`ALLOWLIST_EXISTS`, `ALLOWLIST_NOT_FOUND`, `CSV_VALIDATION_ERROR` など）を表示。
+
+### CSV インポート仕様
+
+| 列 | 必須 | 型/制約 | 説明 |
+|----|------|---------|------|
+| `email` | ✅ | 文字列 / trim + lowercase / 320 文字以内 | allowlist 対象の Google アドレス。小文字へ正規化して比較 |
+| `status` | ✅ | `active` / `pending` / `revoked` | 未指定は `pending` と解釈。UI では select で選ばせる |
+| `label` | ⛔️（任意） | 0-64 文字 | クラス名や期 |
+| `notes` | ⛔️（任意） | 0-512 文字 | 連絡事項。CSV ではダブルクオートで囲み、改行は不可 |
+
+* 文字コードは UTF-8、1 行目にヘッダ必須。
+* 1 ファイル 500 行以内。超える場合は複数回に分ける。
+* UI はアップロード後にプレビューを表示し、行ごとの検証結果（OK / Warning / Error）を表示する。Error 行がある場合は全体をコミットせず、修正して再アップロードさせる。
+
+### 重複時の挙動
+
+* **CSV 内重複**：同じ `email` が複数回出現した場合は 400 `CSV_DUPLICATED_IN_FILE` を返し、該当行番号を `details` に含める。UI はその行を赤で表示。
+* **DB 既存レコードとの重複**：
+	* `mode = 'insert'`（デフォルト）では 409 `ALLOWLIST_EXISTS`。
+	* `mode = 'upsert'` を CSV モーダルで選択した場合は `status/label/notes` を上書きし、`updatedBy` を現在のスタッフに設定。レスポンスの `data` には upsert された件数を返す。
+* 並列実行を考慮し、サーバー側でも `lower(email)` 一意制約で二重登録を防ぎ、違反時は 409 を UI に伝える。
 
 ---
 
