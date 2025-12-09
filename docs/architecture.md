@@ -110,6 +110,7 @@
 │  │  │                   errors.ts, errorPresenter.ts, apiHandler.ts, notifier.ts)
 │  │  ├─ components/ hooks/ types/ utils/
 │  └─ styles/
+├─ supabase/            (Supabase 用マイグレーション SQL。SQL Editor/CLI どちらでも利用可能)
 ├─ public/                (katex assets 等)
 ├─ scripts/               (seed等)
 ├─ tests/                 (統合/E2E 任意) ※単体は同ファイル内に記述

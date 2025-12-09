@@ -66,7 +66,16 @@ pnpm dev
 # http://localhost:3000
 ```
 
-詳細は [docs/deployment.md](./docs/deployment.md) を参照。
+### Supabase 初期セットアップ（最速ルート）
+
+1. Supabase ダッシュボードでプロジェクトを作成し、`Settings > API` から  
+   `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` を `.env.local` に設定
+2. Supabase の `SQL Editor` で `supabase/migrations/20241204154500_allowlist_audit.sql` を実行  
+   （`app_user` / `allowed_email` / `audit_allowlist` が作成される）
+3. `pnpm dev` や `pnpm test` で疎通確認
+4. 本格運用時は Supabase CLI (`supabase db push`) で同じ SQL を適用できるようにする
+
+手順の詳細や CLI 版フローは [docs/deployment.md](./docs/deployment.md) を参照。
 
 ---
 
@@ -135,6 +144,7 @@ pnpm dev
 ├─ public/                     # 静的ファイル（KaTeX assets 等）
 ├─ scripts/                    # Seed/Import (`seed-allowlist.ts` など)
 ├─ tests/                      # 統合/E2E（任意）
+├─ supabase/                   # Supabase 用マイグレーション（SQL Editor での手動作業/CLI 両対応）
 ├─ .env.example
 ├─ package.json
 ├─ vitest.config.ts

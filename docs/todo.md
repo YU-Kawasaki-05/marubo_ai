@@ -18,6 +18,7 @@
 | SPEC-03 | review | `/api/sync-user` メッセージ定義 | `pending/revoked/not-found` のフロント表示文言と問い合わせ導線を `docs/api.md` に追加済み。 |
 | SPEC-04 | todo | 退会/削除ポリシー整理 | 会話・添付の保持期限、削除手順を `docs/database.md` と `docs/operational/runbook.md` に追記。 |
 | SPEC-05 | blocked | 保護者共有要件確認 | 許可リストの CSV を保護者に配布するか等、ユーザー確認が必要。回答待ち。 |
+| SPEC-06 | todo | Onboarding/README 更新 | 初回セットアップ（Supabase プロジェクト作成、SQL Editor でのテーブル作成、`.env` の埋め方）を `docs/onboarding.md` / `README.md` に追記し、CLI との切り替え手順も示す。 |
 
 ### 2. バックエンド実装
 
@@ -28,6 +29,7 @@
 | BE-03 | review | `/api/admin/allowlist` 実装 | GET/POST/PATCH、CSV受け付け、リクエスト検証、`requestId` 付与、`staff` ガードを `app/api/admin/allowlist/*` で実装済み。 |
 | BE-04 | todo | `/api/sync-user` 拡張 | `allowed_email` 状態チェック、エラーコード、レスポンス payload を実装し、`app_user` upsert を idempotent に。 |
 | BE-05 | progress | seed/import スクリプト | `scripts/seed-allowlist.ts` (CSV→bulk upsert) と `export` スクリプトを作成。CSV バリデーションも含む。 |
+| BE-06 | todo | Supabase CLI マイグレーション運用 | `supabase/migrations` に `allowed_email` / `audit_allowlist` 追加分を作成し、`supabase db push` / `pnpm db:migrate` の手順を `README.md` / `docs/deployment.md` に明記。Webコンソールのみでの暫定手順も併記。 |
 
 ### 3. フロントエンド実装
 
@@ -46,6 +48,7 @@
 | QA-02 | todo | API 統合テスト | `/api/admin/allowlist` / `/api/sync-user` の happy/sad パスを Vitest + supertest 等でカバー。 |
 | QA-03 | todo | フロント E2E | スタッフが allowlist 追加 → 生徒がログイン完了、退会後にログイン不可までを Playwright 等で自動化。 |
 | QA-04 | todo | スクリプトテスト | CSV seed/export スクリプトの dry-run、バリデーション単体テスト。 |
+| QA-05 | todo | `/api/admin/allowlist` API テスト | Vitest + supertest で GET/POST/PATCH/import の happy/sad ケースをカバーし、Service Role モックや CSV バリデーションを検証する。 |
 
 ### 5. 運用 / DevOps
 

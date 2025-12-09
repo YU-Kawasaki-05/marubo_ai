@@ -90,9 +90,25 @@ pnpm format
 
 ### データベース操作
 
-* 初期は Supabase **SQL Editor** で本READMEのSQLを適用
-* 将来は Supabase CLI の migration に移行推奨
-* Seed は `scripts/` 配下
+#### 1. Supabase SQL Editor での初期セットアップ（推奨スタート手順）
+
+1. Supabase ダッシュボードで `SQL` → `New query`
+2. `supabase/migrations/20241204154500_allowlist_audit.sql` の内容をコピペして `Run`
+   * `app_user` / `allowed_email` / `audit_allowlist` の 3 テーブルが作成される
+   * 退会時の監査ログや `updated_by` など API が期待する列が揃う
+3. `.env.local` に `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` / `SUPABASE_SERVICE_ROLE_KEY` を設定
+4. `pnpm dev` または `pnpm test` で疎通確認
+
+#### 2. Supabase CLI + Migration での運用
+
+1. `npm i -g supabase` で CLI を導入（初回のみ）
+2. `supabase login` → `supabase init`
+3. 以降、スキーマ変更は `supabase/migrations` に SQL を追加し `supabase db push`（ローカル）or `supabase db reset`（検証用）で同期
+4. CI 等で `pnpm db:migrate`（`supabase db push` をラップ）すれば環境差異を抑制可能
+
+> Web コンソールのみで進めたい場合は 1. の手順だけでも十分です。後から CLI に切り替える際は、既存テーブルとの差分を確認してから `supabase db diff` を実行してください。
+
+* Seed/Import は `scripts/` 配下（例：`scripts/seed-allowlist.ts`）
 
 ---
 

@@ -28,8 +28,8 @@
 |------|------|--------------------------------|
 | 0. Overview | README 全体を俯瞰し、ビジネス背景と主要機能を把握 | `README.md`
 | 1. Local Setup | 依存インストールと環境変数設定 | `README.md`「クイックスタート」、`docs/deployment.md`
-| 2. 資格情報整備 | Supabase / Vercel / Resend を接続し、`.env.local` を埋める | `docs/deployment.md`、`docs/security.md`
-| 3. データ準備 | `allowed_email` 登録と `app_user` 初期化でログインを可能にする | `docs/database.md`、`docs/rls.md`
+| 2. 資格情報整備 | Supabase / Vercel / Resend を接続し、`.env.local` を埋める（Supabase未経験者は `supabase/migrations/20241204154500_allowlist_audit.sql` を SQL Editor で流すだけで可） | `docs/deployment.md`、`docs/security.md`
+| 3. データ準備 | `allowed_email` 登録と `app_user` 初期化でログインを可能にする（CLI 運用に切り替える場合は `supabase db push` を使用） | `docs/database.md`、`docs/rls.md`
 | 4. アーキテクチャ理解 | 機能責務・RLS 境界・ディレクトリ構造を把握 | `docs/architecture.md`
 | 5. コーディング規約 | TypeScript/Next.js の実装ルールと AI 生成手順を確認 | `docs/coding-guidelines.md`
 | 6. 品質ゲート | テスト/リンター/型チェックを一度通し、失敗時の対処を把握 | `docs/testing.md`
