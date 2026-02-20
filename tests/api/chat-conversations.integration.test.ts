@@ -69,7 +69,7 @@ class MockQuery implements PromiseLike<{ data: Array<Record<string, unknown>> | 
   private async execute() {
     const source = this.table === 'conversations' ? mockState.conversations : mockState.messages
     let data = source.filter((row) => this.filters.every((fn) => fn(row)))
-    this.sorts.forEach(({ field, ascending }) => {
+    ;[...this.sorts].reverse().forEach(({ field, ascending }) => {
       data = [...data].sort((a, b) => {
         if (a[field] === b[field]) return 0
         return (a[field]! > b[field]! ? 1 : -1) * (ascending ? 1 : -1)
@@ -85,6 +85,9 @@ class MockQuery implements PromiseLike<{ data: Array<Record<string, unknown>> | 
 const mockClient = {
   auth: {
     getUser: async (token: string) => {
+      if (!token) {
+        return { data: { user: null }, error: { message: 'missing token' } }
+      }
       if (token === 'student-token') {
         return {
           data: { user: { id: 'mock-student-auth', email: 'student@example.com' } },
@@ -188,11 +191,11 @@ describe('chat conversations integration', () => {
     ])
   })
 
-  it('returns 401 or 403 when authorization is missing or invalid', async () => {
+  it('returns 401 when authorization is missing or invalid', async () => {
     const noAuthChat = await chatPost(
       new Request('http://localhost/api/chat', { method: 'POST', body: JSON.stringify({ messages: [] }) }),
     )
-    expect([401, 403]).toContain(noAuthChat.status)
+    expect(noAuthChat.status).toBe(401)
 
     const invalidChat = await chatPost(
       new Request('http://localhost/api/chat', {
@@ -201,10 +204,10 @@ describe('chat conversations integration', () => {
         body: JSON.stringify({ messages: [] }),
       }),
     )
-    expect([401, 403]).toContain(invalidChat.status)
+    expect(invalidChat.status).toBe(401)
 
     const noAuthList = await conversationsGet(new Request('http://localhost/api/conversations', { method: 'GET' }))
-    expect([401, 403]).toContain(noAuthList.status)
+    expect(noAuthList.status).toBe(401)
 
     const invalidList = await conversationsGet(
       new Request('http://localhost/api/conversations', {
@@ -212,13 +215,13 @@ describe('chat conversations integration', () => {
         headers: { Authorization: 'Bearer invalid-token' },
       }),
     )
-    expect([401, 403]).toContain(invalidList.status)
+    expect(invalidList.status).toBe(401)
 
     const noAuthDetail = await conversationDetailGet(
       new Request('http://localhost/api/conversations/conv-1', { method: 'GET' }),
       { params: { id: 'conv-1' } },
     )
-    expect([401, 403]).toContain(noAuthDetail.status)
+    expect(noAuthDetail.status).toBe(401)
 
     const invalidDetail = await conversationDetailGet(
       new Request('http://localhost/api/conversations/conv-1', {
@@ -227,6 +230,6 @@ describe('chat conversations integration', () => {
       }),
       { params: { id: 'conv-1' } },
     )
-    expect([401, 403]).toContain(invalidDetail.status)
+    expect(invalidDetail.status).toBe(401)
   })
 })
