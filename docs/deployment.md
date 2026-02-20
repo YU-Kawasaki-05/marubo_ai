@@ -109,8 +109,13 @@ pnpm format
 
 1. `npm i -g supabase` で CLI を導入（初回のみ）
 2. `supabase login` → `supabase init`
-3. 以降、スキーマ変更は `supabase/migrations` に SQL を追加し `supabase db push`（ローカル）or `supabase db reset`（検証用）で同期
-4. CI 等で `pnpm db:migrate`（`supabase db push` をラップ）すれば環境差異を抑制可能
+3. 以降、スキーマ変更は `supabase/migrations` に SQL を追加し `pnpm db:push`（ローカル）or `supabase db reset`（検証用）で同期
+4. **本番適用は必ず dry-run → push の順で実施する**
+   ```bash
+   pnpm db:push:dry   # 差分確認（適用はしない）
+   pnpm db:push       # 問題なければ本適用
+   ```
+5. CI 等で `pnpm db:migrate`（`pnpm db:push` をラップ）を使えば、適用コマンドを統一できる
 
 > Web コンソールのみで進めたい場合は 1. の手順だけでも十分です。後から CLI に切り替える際は、既存テーブルとの差分を確認してから `supabase db diff` を実行してください。
 
@@ -279,8 +284,9 @@ supabase init
 # マイグレーションファイル作成
 supabase migration new create_app_user_table
 
-# マイグレーション適用
-supabase db push
+# 本番適用（安全手順）
+pnpm db:push:dry
+pnpm db:push
 
 # リモートとローカルの同期
 supabase db pull

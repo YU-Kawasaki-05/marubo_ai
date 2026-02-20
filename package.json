@@ -11,7 +11,10 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:cov": "vitest run --coverage",
-    "format": "prettier -w ."
+    "format": "prettier -w .",
+    "db:push:dry": "supabase db push --dry-run",
+    "db:push": "supabase db push",
+    "db:migrate": "pnpm db:push"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.9",

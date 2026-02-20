@@ -43,7 +43,7 @@
 | **BE-03** | review | `/api/admin/allowlist` 実装 | (実装済み) GET/POST/PATCH、CSV受け付け、リクエスト検証などを実装済み。 |
 | **BE-04** | review | `/api/sync-user` 拡張 | (実装済み) `active` で同期、`pending/revoked` でエラー、`not-found` で拒否するロジックを実装済み。 |
 | **BE-05** | review | seed/import スクリプト | (実装済み) `scripts/seed-allowlist.ts` を作成。`scripts/data/allowlist.sample.csv` からデータを読み込み、Seed Bot ユーザー経由で DB に登録/更新できることを確認。 |
-| **BE-06** | todo | Supabase CLI マイグレーション運用 | **Blocker解消**: DB パスワード受領済み。<br>**Step 1**: `package.json` に `db:migrate` などのコマンドショートカットを追加する。<br>**Step 2**: `docs/deployment.md` に、本番環境へのマイグレーション適用手順を書く。 |
+| **BE-06** | review | Supabase CLI マイグレーション運用 | (実装済み) `package.json` に `db:push:dry` / `db:push` / `db:migrate` を追加し、`docs/deployment.md` に本番適用の安全手順（dry-run → push）を追記済み。 |
 | **BE-07** | review | Supabase モック切替 | (実装済み) `MOCK_SUPABASE=true` でメモリモックに切り替わる仕組みを実装済み。 |
 | **BE-08** | todo | 画像添付テーブル & RLS | **Step 1**: `supabase/migrations/` に `attachments` テーブルを追加（message_id, user_id, storage_path, mime_type, size, created_at）。<br>**Step 2**: RLS ポリシー（本人のみ読取/作成可）を追加。<br>**Step 3**: `src/shared/types/database.ts` を更新。 |
 | **BE-09** | todo | Storage バケット準備 | **Step 1**: Supabase Storage に `attachments` バケットを作成。<br>**Step 2**: Storage RLS/CORS を設定（アップロードは署名URLのみ）。<br>**Step 3**: `docs/deployment.md` にセットアップ手順を追記。 |
@@ -97,7 +97,7 @@
 
 | ID | Status | 概要 | 詳細ステップ (Step) |
 |----|--------|------|------|
-| **OPS-01** | todo | Migration ワークフロー整理 | `BE-06` と重複するため、そちらで実施。 |
+| **OPS-01** | review | Migration ワークフロー整理 | (実装済み) `BE-06` と連動し、CLIコマンド（`db:push:dry` / `db:push`）と本番手順（dry-run → push）を `package.json` / `docs/deployment.md` に反映済み。 |
 | **OPS-02** | done | CI 更新 | **Step 1**: (完了) `.github/workflows/test.yml` を作成し、Push時に Lint/Typecheck/Test が実行されるように構成済み。 |
 | **OPS-03** | blocked | Allowlist 変更通知設計 | (ユーザー確認待ち) |
 | **OPS-04** | review | README 統合反映 | (完了確認) `README.new.md` が削除され、`README.md` に統合されているか確認する。 |
