@@ -13,8 +13,7 @@
     "test:cov": "vitest run --coverage",
     "format": "prettier -w .",
     "db:push:dry": "supabase db push --dry-run",
-    "db:push": "supabase db push",
-    "db:migrate": "pnpm db:push"
+    "db:push": "supabase db push"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.9",

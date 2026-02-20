@@ -115,7 +115,6 @@ pnpm format
    pnpm db:push:dry   # 差分確認（適用はしない）
    pnpm db:push       # 問題なければ本適用
    ```
-5. CI 等で `pnpm db:migrate`（`pnpm db:push` をラップ）を使えば、適用コマンドを統一できる
 
 > Web コンソールのみで進めたい場合は 1. の手順だけでも十分です。後から CLI に切り替える際は、既存テーブルとの差分を確認してから `supabase db diff` を実行してください。
 
