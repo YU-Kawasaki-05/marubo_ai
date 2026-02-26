@@ -47,7 +47,7 @@
 | **BE-07** | review | Supabase モック切替 | (実装済み) `MOCK_SUPABASE=true` でメモリモックに切り替わる仕組みを実装済み。 |
 | **BE-08** | review | 画像添付テーブル & RLS | (実装済み) `supabase/migrations/20260226000000_be08_attachments.sql` を追加し、`attachments` テーブル（message_id, user_id, storage_path, mime_type, size_bytes, created_at）と RLS（本人 + staff）を実装。`src/shared/types/database.ts` に `attachments` 型定義を反映済み。 |
 | **BE-09** | review | Storage バケット準備 | (手順書更新済み) `docs/deployment.md` に `attachments` バケット作成 / Storage policy 確認 / CORS 確認手順を追記。<br>※ 実環境への作成・設定は Supabase コンソールでの手動作業。 |
-| **BE-10** | todo | 画像アップロード署名 API | **Step 1**: `app/api/attachments/sign/route.ts` を新規実装（認証必須）。<br>**Step 2**: mime/サイズ/拡張子のバリデーションを追加。<br>**Step 3**: `createSignedUploadUrl` で署名URLを返す。 |
+| **BE-10** | review | 画像アップロード署名 API | (実装済み) `app/api/attachments/sign/route.ts` を新規作成。認証チェック + MIME/サイズバリデーション (`src/shared/lib/attachmentValidation.ts`) + `createSignedUploadUrl` で署名 URL 発行。テスト `tests/api/attachments-sign.test.ts` で認証/バリデーション/正常系/Storage エラーを網羅。 |
 | **BE-11** | todo | チャット保存で添付を永続化 | **Step 1**: `/api/chat` のリクエストに `attachments` を受け付ける（配列）。<br>**Step 2**: `messages` と `attachments` を紐付けて保存。<br>**Step 3**: 会話詳細 API で attachments 情報を返す。 |
 | **BE-12** | todo | スタッフ会話検索 API | **Step 1**: `app/api/admin/conversations` (一覧) を実装（staff認証必須）。<br>**Step 2**: フィルタ（email/user_id/期間/キーワード）とページネーションを追加。<br>**Step 3**: `app/api/admin/conversations/[id]`（詳細）を実装。 |
 | **BE-13** | todo | admin/grant API | **Step 1**: `app/api/admin/grant/route.ts` を実装（`requireStaff()` + `GRANT_ALLOWED_EMAILS` チェック）。<br>**Step 2**: `app_user.role` 更新 + `auth.admin.updateUserById` で `app_metadata.role` 同期。<br>**Step 3**: `audit_grant` テーブルに監査ログ記録。<br>**Step 4**: GET エンドポイント（スタッフ一覧 + 操作履歴）を実装。<br>仕様: `docs/admin/grant.md` |
