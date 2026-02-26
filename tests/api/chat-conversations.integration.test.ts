@@ -3,16 +3,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 const mockState = vi.hoisted(() => ({
   conversations: [] as Array<Record<string, unknown>>,
   messages: [] as Array<Record<string, unknown>>,
+  attachments: [] as Array<Record<string, unknown>>,
   seq: 0,
 }))
 
+type TableName = 'conversations' | 'messages' | 'attachments'
+
 class MockQuery implements PromiseLike<{ data: Array<Record<string, unknown>> | null; error: { message: string } | null }> {
-  private readonly table: 'conversations' | 'messages'
+  private readonly table: TableName
   private filters: Array<(row: Record<string, unknown>) => boolean> = []
   private sorts: Array<{ field: string; ascending: boolean }> = []
   private limitCount: number | null = null
 
-  constructor(table: 'conversations' | 'messages') {
+  constructor(table: TableName) {
     this.table = table
   }
 
@@ -22,6 +25,11 @@ class MockQuery implements PromiseLike<{ data: Array<Record<string, unknown>> | 
 
   eq(field: string, value: unknown) {
     this.filters.push((row) => row[field] === value)
+    return this
+  }
+
+  in(field: string, values: unknown[]) {
+    this.filters.push((row) => values.includes(row[field]))
     return this
   }
 
@@ -41,7 +49,7 @@ class MockQuery implements PromiseLike<{ data: Array<Record<string, unknown>> | 
 
   insert(values: Record<string, unknown> | Array<Record<string, unknown>>) {
     const rows = Array.isArray(values) ? values : [values]
-    const tableData = this.table === 'conversations' ? mockState.conversations : mockState.messages
+    const tableData = this.getTableData()
     rows.forEach((row) => {
       mockState.seq += 1
       const createdAt = row.created_at ?? new Date(1700000000000 + mockState.seq * 1000).toISOString()
@@ -66,8 +74,19 @@ class MockQuery implements PromiseLike<{ data: Array<Record<string, unknown>> | 
     return this.execute().then(onfulfilled, onrejected) as Promise<TResult1 | TResult2>
   }
 
+  private getTableData() {
+    switch (this.table) {
+      case 'conversations':
+        return mockState.conversations
+      case 'messages':
+        return mockState.messages
+      case 'attachments':
+        return mockState.attachments
+    }
+  }
+
   private async execute() {
-    const source = this.table === 'conversations' ? mockState.conversations : mockState.messages
+    const source = this.getTableData()
     let data = source.filter((row) => this.filters.every((fn) => fn(row)))
     ;[...this.sorts].reverse().forEach(({ field, ascending }) => {
       data = [...data].sort((a, b) => {
@@ -97,7 +116,7 @@ const mockClient = {
       return { data: { user: null }, error: { message: 'invalid token' } }
     },
   },
-  from: (table: 'conversations' | 'messages') => new MockQuery(table),
+  from: (table: TableName) => new MockQuery(table),
 }
 
 vi.mock('@supabase/supabase-js', () => ({
@@ -141,6 +160,7 @@ describe('chat conversations integration', () => {
   beforeEach(() => {
     mockState.conversations = []
     mockState.messages = []
+    mockState.attachments = []
     mockState.seq = 0
     process.env.OPENAI_API_KEY = 'test-key'
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://mock.local'
@@ -231,5 +251,119 @@ describe('chat conversations integration', () => {
       { params: { id: 'conv-1' } },
     )
     expect(invalidDetail.status).toBe(401)
+  })
+
+  it('saves attachments with chat and returns them in conversation detail', async () => {
+    // チャット送信時に添付画像を含める
+    const chatRes = await chatPost(
+      new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer student-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [{ id: 'm-user-1', role: 'user', parts: [{ type: 'text', text: 'この問題を解いて' }] }],
+          attachments: [
+            { storagePath: 'mock-student-auth/abc.jpg', mimeType: 'image/jpeg', size: 12345 },
+            { storagePath: 'mock-student-auth/def.png', mimeType: 'image/png', size: 67890 },
+          ],
+        }),
+      }),
+    )
+
+    expect(chatRes.status).toBe(200)
+    const conversationId = chatRes.headers.get('x-conversation-id')
+    expect(conversationId).toBeTruthy()
+
+    // attachments が保存されたことを確認
+    expect(mockState.attachments).toHaveLength(2)
+    expect(mockState.attachments[0]).toMatchObject({
+      user_id: 'mock-student-auth',
+      storage_path: 'mock-student-auth/abc.jpg',
+      mime_type: 'image/jpeg',
+      size_bytes: 12345,
+    })
+    expect(mockState.attachments[1]).toMatchObject({
+      storage_path: 'mock-student-auth/def.png',
+      mime_type: 'image/png',
+      size_bytes: 67890,
+    })
+
+    // message_id が user メッセージの ID と一致していることを確認
+    const userMessage = mockState.messages.find((m) => m.role === 'user')
+    expect(userMessage).toBeTruthy()
+    expect(mockState.attachments[0].message_id).toBe(userMessage!.id)
+    expect(mockState.attachments[1].message_id).toBe(userMessage!.id)
+
+    // 会話詳細 API で attachments が返ることを確認
+    const detailRes = await conversationDetailGet(
+      new Request(`http://localhost/api/conversations/${conversationId}`, {
+        method: 'GET',
+        headers: { Authorization: 'Bearer student-token' },
+      }),
+      { params: { id: conversationId! } },
+    )
+    const detailBody = await parseJson(detailRes)
+    expect(detailRes.status).toBe(200)
+
+    type MessageWithAttachments = {
+      role: string
+      content: string
+      attachments: Array<{ storagePath: string; mimeType: string; sizeBytes: number }>
+    }
+    const detailMessages = (detailBody.data as { messages: MessageWithAttachments[] }).messages
+
+    // user メッセージに attachments が含まれること
+    const userMsg = detailMessages.find((m) => m.role === 'user')
+    expect(userMsg).toBeTruthy()
+    expect(userMsg!.attachments).toHaveLength(2)
+    expect(userMsg!.attachments[0]).toMatchObject({
+      storagePath: 'mock-student-auth/abc.jpg',
+      mimeType: 'image/jpeg',
+      sizeBytes: 12345,
+    })
+
+    // assistant メッセージには attachments が空であること
+    const assistantMsg = detailMessages.find((m) => m.role === 'assistant')
+    expect(assistantMsg).toBeTruthy()
+    expect(assistantMsg!.attachments).toEqual([])
+  })
+
+  it('handles chat without attachments (backward compatibility)', async () => {
+    const chatRes = await chatPost(
+      new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer student-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [{ id: 'm-user-1', role: 'user', parts: [{ type: 'text', text: 'テスト' }] }],
+        }),
+      }),
+    )
+
+    expect(chatRes.status).toBe(200)
+    expect(mockState.attachments).toHaveLength(0)
+
+    const conversationId = chatRes.headers.get('x-conversation-id')
+    const detailRes = await conversationDetailGet(
+      new Request(`http://localhost/api/conversations/${conversationId}`, {
+        method: 'GET',
+        headers: { Authorization: 'Bearer student-token' },
+      }),
+      { params: { id: conversationId! } },
+    )
+    const detailBody = await parseJson(detailRes)
+
+    type MessageWithAttachments = {
+      role: string
+      attachments: unknown[]
+    }
+    const msgs = (detailBody.data as { messages: MessageWithAttachments[] }).messages
+    msgs.forEach((m) => {
+      expect(m.attachments).toEqual([])
+    })
   })
 })

@@ -1,7 +1,8 @@
 /** @file
  * `/api/chat` Route Handler
  * 機能：チャットメッセージを受信し、AIからの応答をストリーミングで返す。
- * 入力：JSON { messages: CoreMessage[] }
+ *   添付画像がある場合は attachments テーブルにも永続化する。
+ * 入力：JSON { messages: UIMessage[], attachments?: { storagePath, mimeType, size }[] }
  * 出力：Streaming Text Response
  * 依存：Vercel AI SDK, OpenAI, Supabase Auth
  * セキュリティ：ログイン済みユーザーのみ実行可能。
@@ -23,6 +24,13 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 type UIMessageWithLegacyContent = UIMessage & { content?: string }
+
+/** クライアントから送られる添付メタデータ（署名 URL アップロード済み） */
+type AttachmentInput = {
+  storagePath: string
+  mimeType?: string
+  size?: number
+}
 
 const getUIMessageText = (message?: UIMessageWithLegacyContent) => {
   if (!message) return ''
@@ -62,8 +70,12 @@ export async function POST(req: Request) {
     // クライアント(useChat)から送られるメッセージは UI Message 形式なので、
     // 自作の Adapter 関数を使用して、安全に Model Message 形式に変換する。
     // convertToModelMessages のバグ(undefined parts)を回避する。
-    const requestBody = (await req.json()) as { messages?: UIMessageWithLegacyContent[] }
+    const requestBody = (await req.json()) as {
+      messages?: UIMessageWithLegacyContent[]
+      attachments?: AttachmentInput[]
+    }
     const uiMessages = requestBody.messages ?? []
+    const attachmentInputs = requestBody.attachments ?? []
 
     const messages = await convertSafeMessages(uiMessages)
 
@@ -114,10 +126,11 @@ export async function POST(req: Request) {
           })
 
           // 最新のユーザーメッセージ + AI 応答を保存
+          const userMessageId = crypto.randomUUID()
           const rows: { id: string; conversation_id: string; role: 'user' | 'assistant'; content: string }[] = []
           if (userText) {
             rows.push({
-              id: crypto.randomUUID(),
+              id: userMessageId,
               conversation_id: conversationId,
               role: 'user' as const,
               content: userText,
@@ -130,6 +143,19 @@ export async function POST(req: Request) {
             content: assistantText,
           })
           await supabaseAdmin.from('messages').insert(rows)
+
+          // 添付画像がある場合は attachments テーブルに保存
+          if (attachmentInputs.length > 0 && userText) {
+            const attachmentRows = attachmentInputs.map((a) => ({
+              id: crypto.randomUUID(),
+              message_id: userMessageId,
+              user_id: user.id,
+              storage_path: a.storagePath,
+              mime_type: a.mimeType ?? null,
+              size_bytes: a.size ?? null,
+            }))
+            await supabaseAdmin.from('attachments').insert(attachmentRows)
+          }
         } catch (saveError) {
           console.error('Chat save error:', saveError)
           // 保存失敗はレスポンスには影響させない（ログのみ）

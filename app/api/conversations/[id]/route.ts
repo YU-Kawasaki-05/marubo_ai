@@ -1,5 +1,5 @@
 /** @file
- * GET /api/conversations/[id] — 会話詳細 + メッセージ一覧
+ * GET /api/conversations/[id] — 会話詳細 + メッセージ一覧 + 添付画像
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -64,6 +64,35 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to fetch messages' }, { status: 500 })
     }
 
+    // メッセージに紐づく添付画像を取得
+    const messageIds = (messages ?? []).map((m) => m.id)
+    const attachmentsByMessageId: Record<
+      string,
+      Array<{ id: string; storagePath: string; mimeType: string | null; sizeBytes: number | null }>
+    > = {}
+
+    if (messageIds.length > 0) {
+      const { data: attachments } = await supabase
+        .from('attachments')
+        .select('id, message_id, storage_path, mime_type, size_bytes')
+        .in('message_id', messageIds)
+
+      if (attachments) {
+        for (const a of attachments) {
+          const mid = a.message_id
+          if (!attachmentsByMessageId[mid]) {
+            attachmentsByMessageId[mid] = []
+          }
+          attachmentsByMessageId[mid].push({
+            id: a.id,
+            storagePath: a.storage_path,
+            mimeType: a.mime_type,
+            sizeBytes: a.size_bytes,
+          })
+        }
+      }
+    }
+
     return NextResponse.json({
       data: {
         id: conv.id,
@@ -74,6 +103,7 @@ export async function GET(
           role: m.role,
           content: m.content,
           createdAt: m.created_at,
+          attachments: attachmentsByMessageId[m.id] ?? [],
         })) ?? [],
       },
     })
