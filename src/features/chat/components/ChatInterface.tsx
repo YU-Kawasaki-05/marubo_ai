@@ -1,15 +1,18 @@
 /** @file
  * チャット機能のメインUIコンポーネント (Basic Implementation)
- * 機能：メッセージの表示、入力、送信、AI応答のストリーミング表示
- * 依存：Vercel AI SDK (useChat), Supabase Client
+ * 機能：メッセージの表示、入力、送信、AI応答のストリーミング表示、画像添付
+ * 依存：Vercel AI SDK (useChat), Supabase Client, useImageAttachments
  */
 
 'use client'
 
 import { useChat } from '@ai-sdk/react'
 import { type UIMessage } from 'ai'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
+import { useImageAttachments } from '../hooks/useImageAttachments'
+
+import { ImagePreviewBar } from './ImagePreviewBar'
 import { MessageBubble } from './MessageBubble'
 
 import { getSupabaseBrowserClient } from '@shared/lib/supabaseClient'
@@ -37,7 +40,10 @@ function ChatSession({
 }) {
   // Vercel AI SDK の useChat (v6系) は input 管理を提供しないため、自前で管理する
   const [input, setInput] = useState('')
-  
+
+  // 画像添付フック
+  const attachments = useImageAttachments(token)
+
   const { messages, sendMessage, status, setMessages } = useChat({
     // api: '/api/chat', // デフォルト
     onError: (error) => {
@@ -79,24 +85,61 @@ function ChatSession({
     setInput(e.target.value)
   }
 
+  // ドラッグ&ドロップ
+  const [isDragging, setIsDragging] = useState(false)
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(true)
+  }, [])
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+  }, [])
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault()
+    setIsDragging(false)
+    if (e.dataTransfer.files.length > 0) {
+      attachments.addFiles(e.dataTransfer.files)
+    }
+  }, [attachments])
+
   // メッセージ送信時のハンドラ
   const onSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    if (!input.trim()) return
+    if (!input.trim() && attachments.items.length === 0) return
 
     const userMessage = input
     setInput('') // 入力欄をクリア
-    
+
     try {
+      // 添付画像がある場合はアップロードしてからメッセージ送信
+      let attachmentMeta: { storagePath: string; mimeType: string; size: number }[] = []
+      if (attachments.items.length > 0) {
+        attachmentMeta = await attachments.uploadAll()
+        if (attachmentMeta.length === 0 && attachments.hasError) {
+          // アップロード全件失敗の場合は送信中止
+          return
+        }
+      }
+
       // sendMessage を使ってメッセージを追加・送信
       // headers はここで渡す（認証トークンを API に送る）
       await sendMessage({
         text: userMessage,
       }, {
         headers: {
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
         },
+        body: attachmentMeta.length > 0
+          ? { attachments: attachmentMeta }
+          : undefined,
       })
+
+      // アップロード完了後にプレビューをクリア
+      attachments.clearAll()
 
       // sendMessage 完了後、最新の会話一覧を取得して
       // 新しく作成された会話のIDを親に通知する
@@ -126,7 +169,19 @@ function ChatSession({
   }
 
   return (
-    <div className="flex flex-col h-full bg-white max-w-4xl mx-auto">
+    <div
+      className="flex flex-col h-full bg-white max-w-4xl mx-auto"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {/* ドラッグ&ドロップオーバーレイ */}
+      {isDragging && (
+        <div className="absolute inset-0 z-50 bg-blue-50/80 border-2 border-dashed border-blue-400 rounded-lg flex items-center justify-center pointer-events-none">
+          <p className="text-blue-600 font-medium text-lg">画像をドロップして添付</p>
+        </div>
+      )}
+
       {/* メッセージ表示エリア */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.length === 0 && (
@@ -134,13 +189,13 @@ function ChatSession({
             <h2 className="text-xl font-bold mb-2">こんにちは！</h2>
             <p>学習に関する質問を自由にしてください。</p>
             <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg mx-auto text-sm text-left">
-              <button 
+              <button
                 onClick={() => { setInput('二次方程式の解の公式を教えて'); }}
                 className="p-3 border rounded-lg hover:bg-gray-50 transition text-gray-700"
               >
                 「二次方程式の解の公式を教えて」
               </button>
-              <button 
+              <button
                  onClick={() => { setInput('英単語の効率的な覚え方は？'); }}
                  className="p-3 border rounded-lg hover:bg-gray-50 transition text-gray-700"
               >
@@ -149,11 +204,11 @@ function ChatSession({
             </div>
           </div>
         )}
-        
+
         {messages.map((m) => (
           <MessageBubble key={m.id} message={m} />
         ))}
-        
+
         {isLoading && (
           <div className="flex justify-start">
             <div className="bg-gray-100 rounded-lg p-3 text-gray-500 animate-pulse text-sm">
@@ -164,21 +219,59 @@ function ChatSession({
       </div>
 
       {/* 入力フォームエリア */}
-      <div className="border-t p-4 bg-white sticky bottom-0 z-10">
-        <form onSubmit={onSubmit} className="flex gap-2 max-w-4xl mx-auto">
+      <div className="border-t bg-white sticky bottom-0 z-10">
+        {/* エラーメッセージ */}
+        {attachments.globalError && (
+          <div className="px-4 pt-2">
+            <p className="text-sm text-red-500">{attachments.globalError}</p>
+          </div>
+        )}
+
+        {/* 画像プレビュー */}
+        <ImagePreviewBar items={attachments.items} onRemove={attachments.removeItem} />
+
+        <form onSubmit={onSubmit} className="flex gap-2 max-w-4xl mx-auto p-4 pt-2">
+          {/* 隠しファイル入力 */}
+          <input
+            ref={attachments.fileInputRef}
+            type="file"
+            accept={attachments.accept}
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files) {
+                attachments.addFiles(e.target.files)
+              }
+              e.target.value = ''
+            }}
+          />
+
+          {/* 📎 クリップボタン */}
+          <button
+            type="button"
+            onClick={attachments.openFilePicker}
+            className="p-3 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition-colors"
+            disabled={isLoading || attachments.isUploading}
+            title="画像を添付"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48" />
+            </svg>
+          </button>
+
           <input
             className="flex-1 p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
             value={input}
             onChange={handleInputChange}
             placeholder="メッセージを入力..."
-            disabled={isLoading}
+            disabled={isLoading || attachments.isUploading}
           />
           <button
             type="submit"
             className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors shadow-sm"
-            disabled={isLoading || !input?.trim()}
+            disabled={isLoading || attachments.isUploading || (!input?.trim() && attachments.items.length === 0)}
           >
-            送信
+            {attachments.isUploading ? '送信中...' : '送信'}
           </button>
         </form>
       </div>

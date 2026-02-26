@@ -66,7 +66,7 @@
 | **FE-02** | done | Allowlist hooks | (完了) `useAllowlistQuery` および `useAllowlistMutations` (create, update, importCsv) 実装済み。 |
 | **FE-03** | done | CSV アップロード UI | **Step 1 (UI)**: (完了) `src/features/admin/allowlist/components/CsvImportForm.tsx` を作成。<br>**Step 2 (Parser)**: (完了) クライアントサイドでのパース実装済み（Shift_JIS対応）。<br>**Step 3 (Integration)**: (完了) API統合済み。<br>**Step 4 (Validation)**: (完了) CSVフォーマット簡易チェック実装済み。<br>**Step 5 (Doc)**: (完了) `docs/manual/csv_import.md` を作成済み。 |
 | **FE-04** | done | 学生向け警告表示 | **Step 1 (RLS設定)**: (完了) `allowed_email` に `SELECT` 許可ポリシーを追加済み。<br>**Step 2 (データ取得)**: (完了) `useMyAllowlistStatus` 実装済み。<br>**Step 3 (警告UI)**: (完了) `AccountStatusBanner` 実装済み。<br>**Step 4 (配置)**: (完了) `app/layout.tsx` にバナーを配置済み。 |
-| **FE-05** | todo | チャット画像添付 UI | **Step 1**: `ChatInterface` にファイル選択UIを追加（画像のみ/複数可）。<br>**Step 2**: 画像プレビューと削除UIを作る。<br>**Step 3**: `/api/attachments/sign` で署名URL取得→Storageにアップロード。 |
+| **FE-05** | review | チャット画像添付 UI | (実装済み) `useImageAttachments` フック（ファイル選択・バリデーション・署名URLアップロード・プレビュー管理）と `ImagePreviewBar` コンポーネント（サムネイル・ファイル名/サイズ表示・削除ボタン）を新規作成。`ChatInterface` に統合（📎ボタン・ドラッグ&ドロップ・エラー表示・アップロード中状態）。添付メタデータを `/api/chat` の `body.attachments` に送信。 |
 | **FE-06** | todo | 添付画像の表示 | **Step 1**: `/api/conversations/[id]` の `attachments` を受け取りUIで表示。<br>**Step 2**: `MessageBubble` に画像レンダリングを追加（サイズ制限・拡大表示）。 |
 | **FE-07** | todo | スタッフ会話検索 UI | **Step 1**: `/admin/conversations` ページを作成（一覧 + フィルタ）。<br>**Step 2**: 会話詳細（メッセージ/画像）を表示。<br>**Step 3**: ページネーション/検索結果の空状態を整備。 |
 | **FE-08** | todo | 生徒用レポートページ | **Step 1**: `/reports` ページを作成（月選択 + 記事風レポート表示）。<br>**Step 2**: `react-markdown` + `remark-gfm` で Markdown レンダリング（note/Zenn風の1カラムデザイン）。<br>**Step 3**: チャット画面から「📊 レポート」ボタンで遷移できるようにする。<br>**Step 4**: 未生成月の表示（「まだ生成されていません」）を実装。 |
