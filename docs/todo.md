@@ -86,7 +86,7 @@
 | **QA-05** | todo | スクリプトテスト | `scripts/seed-allowlist.ts` を `--dry-run` (書き込まないモード) で実行し、エラーが出ないか確認する。 |
 | **QA-06** | review | `/api/admin/allowlist` API テスト | (QA-02に統合) |
 | **QA-07** | review | Supabase モック E2E | (実装済み) MOCK_SUPABASE を用いたテスト環境整備済み。 |
-| **QA-08** | todo | 画像添付の統合テスト | **Step 1**: 署名URL取得→Storageアップロード→`/api/chat` 保存までの流れをテスト。<br>**Step 2**: 画像が `/api/conversations/[id]` に含まれることを確認。 |
+| **QA-08** | review | 画像添付の統合テスト | (実装済み) `tests/api/attachments-flow.integration.test.ts` を新規作成。署名URL取得→チャット保存→会話詳細取得の一連フローを検証。単一画像・複数画像(3枚)・添付なし・署名失敗・storagePath一貫性の5テストケースを網羅。 |
 | **QA-09** | todo | スタッフ会話検索テスト | **Step 1**: staff 権限で一覧/詳細が取れる。<br>**Step 2**: 生徒ユーザーではアクセス不可 (403/401)。 |
 | **QA-10** | todo | 月次レポートテスト | **Step 1**: dry-run で統計集計・ LLM モック応答・ Markdown 生成を確認。<br>**Step 2**: `monthly_report` への保存を検証。<br>**Step 3**: 生徒用 API で自分のレポートのみ取得できることを確認（RLS）。 |
 | **QA-11** | todo | レート制限テスト | **Step 1**: 連続リクエストで 429 が返る。<br>**Step 2**: 制限解除タイミングを確認。 |
