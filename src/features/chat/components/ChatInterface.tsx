@@ -13,7 +13,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useImageAttachments } from '../hooks/useImageAttachments'
 
 import { ImagePreviewBar } from './ImagePreviewBar'
-import { MessageBubble } from './MessageBubble'
+import { MessageBubble, type MessageAttachment } from './MessageBubble'
 
 import { getSupabaseBrowserClient } from '@shared/lib/supabaseClient'
 
@@ -27,16 +27,18 @@ export interface ChatInterfaceProps {
  * チャットセッション（1つの会話）を管理するコンポーネント
  * useChat フックを内包し、特定の conversationId (または新規) に対するやり取りを行う
  */
-function ChatSession({ 
-  token, 
-  initialMessages = [], 
+function ChatSession({
+  token,
+  initialMessages = [],
   conversationId,
-  onConversationCreated
-}: { 
+  onConversationCreated,
+  attachmentsByMessageId = {},
+}: {
   token: string // 必須
   initialMessages?: UIMessage[]
   conversationId?: string | null
   onConversationCreated?: (id: string) => void
+  attachmentsByMessageId?: Record<string, MessageAttachment[]>
 }) {
   // Vercel AI SDK の useChat (v6系) は input 管理を提供しないため、自前で管理する
   const [input, setInput] = useState('')
@@ -206,7 +208,11 @@ function ChatSession({
         )}
 
         {messages.map((m) => (
-          <MessageBubble key={m.id} message={m} />
+          <MessageBubble
+            key={m.id}
+            message={m}
+            attachments={attachmentsByMessageId[m.id]}
+          />
         ))}
 
         {isLoading && (
@@ -279,39 +285,50 @@ function ChatSession({
   )
 }
 
-/**
- * データのロードを管理するコンポーネント
- */
-function ChatLoader({ 
-  token, 
-  conversationId, 
-  onConversationCreated 
-}: { 
+/** API から返されるメッセージの型（attachments 含む） */
+type RawApiMessage = {
+  id: string
+  role: string
+  content: string
+  createdAt: string
+  attachments?: Array<{
+    id: string
+    storagePath: string
+    mimeType: string | null
+    sizeBytes: number | null
+  }>
+}
+
+function ChatLoader({
+  token,
+  conversationId,
+  onConversationCreated,
+}: {
   token: string
   conversationId?: string | null
-  onConversationCreated?: (id: string) => void 
+  onConversationCreated?: (id: string) => void
 }) {
   const [messages, setMessages] = useState<UIMessage[]>([])
+  const [attachmentsMap, setAttachmentsMap] = useState<Record<string, MessageAttachment[]>>({})
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
     if (!conversationId) {
       setMessages([])
+      setAttachmentsMap({})
       return
     }
 
     setLoading(true)
     fetch(`/api/conversations/${conversationId}`, {
-      headers: { Authorization: `Bearer ${token}` }
+      headers: { Authorization: `Bearer ${token}` },
     })
-      .then(res => res.ok ? res.json() : Promise.reject(res.statusText))
-      .then(json => {
-        // API レスポンス形式: { data: { id, title, createdAt, messages: [{id, role, content, createdAt}] } }
-        const rawMessages: Array<{ id: string; role: string; content: string; createdAt: string }> =
-          json?.data?.messages ?? []
+      .then((res) => (res.ok ? res.json() : Promise.reject(res.statusText)))
+      .then((json) => {
+        // API レスポンス形式: { data: { id, title, createdAt, messages: [{id, role, content, createdAt, attachments}] } }
+        const rawMessages: RawApiMessage[] = json?.data?.messages ?? []
 
         // DB のメッセージ形式を UIMessage 形式に変換
-        // UIMessage は { id, role, content, parts: [{type:'text', text}], createdAt } を必要とする
         const uiMessages: UIMessage[] = rawMessages.map((m) => ({
           id: m.id,
           role: m.role as 'user' | 'assistant',
@@ -320,9 +337,18 @@ function ChatLoader({
           createdAt: new Date(m.createdAt),
         }))
 
+        // 添付画像をメッセージ ID ごとにマップ化
+        const aMap: Record<string, MessageAttachment[]> = {}
+        for (const m of rawMessages) {
+          if (m.attachments && m.attachments.length > 0) {
+            aMap[m.id] = m.attachments
+          }
+        }
+
         setMessages(uiMessages)
+        setAttachmentsMap(aMap)
       })
-      .catch(err => {
+      .catch((err) => {
         console.error('Failed to load conversation', err)
       })
       .finally(() => setLoading(false))
@@ -337,12 +363,13 @@ function ChatLoader({
   }
 
   return (
-    <ChatSession 
-      key={conversationId || 'new'} 
-      token={token} 
-      initialMessages={messages} 
+    <ChatSession
+      key={conversationId || 'new'}
+      token={token}
+      initialMessages={messages}
       conversationId={conversationId}
       onConversationCreated={onConversationCreated}
+      attachmentsByMessageId={attachmentsMap}
     />
   )
 }
