@@ -6,6 +6,7 @@ import type {
   AllowedEmailStatus,
   AppUserRow,
   AuditAllowlistRow,
+  AuditGrantRow,
   Database,
 } from '../types/database'
 
@@ -18,6 +19,7 @@ type AttachmentRow = Database['public']['Tables']['attachments']['Row']
 type TableMap = {
   allowed_email: AllowedEmailRow[]
   audit_allowlist: AuditAllowlistRow[]
+  audit_grant: AuditGrantRow[]
   app_user: AppUserRow[]
   conversations: ConversationRow[]
   messages: MessageRow[]
@@ -202,6 +204,7 @@ class MockSupabaseAdminClient {
   private tables: TableMap = {
     allowed_email: [],
     audit_allowlist: [],
+    audit_grant: [],
     app_user: [
       {
         id: 'mock-staff-id',
@@ -232,6 +235,12 @@ class MockSupabaseAdminClient {
         }
       }
       return { data: { user: null }, error: { message: 'invalid token' } }
+    },
+    admin: {
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      updateUserById: async (userId: string, attrs: Record<string, any>) => {
+        return { data: { user: {} }, error: null }
+      },
     },
   }
 

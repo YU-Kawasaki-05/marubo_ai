@@ -71,6 +71,24 @@ export type AuditAllowlistInsert = Omit<AuditAllowlistRow, 'id' | 'created_at'> 
   created_at?: string
 }
 
+export type AuditGrantAction = 'grant' | 'revoke'
+
+export type AuditGrantRow = {
+  id: string
+  request_id: string
+  operator_user_id: string
+  target_user_id: string
+  action: AuditGrantAction
+  prev_role: string
+  new_role: string
+  created_at: string
+}
+
+export type AuditGrantInsert = Omit<AuditGrantRow, 'id' | 'created_at'> & {
+  id?: string
+  created_at?: string
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -101,6 +119,25 @@ export type Database = {
           {
             foreignKeyName: 'audit_allowlist_staff_user_id_fkey'
             columns: ['staff_user_id']
+            referencedRelation: 'app_user'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      audit_grant: {
+        Row: AuditGrantRow
+        Insert: AuditGrantInsert
+        Update: Partial<AuditGrantRow>
+        Relationships: [
+          {
+            foreignKeyName: 'audit_grant_operator_user_id_fkey'
+            columns: ['operator_user_id']
+            referencedRelation: 'app_user'
+            referencedColumns: ['id']
+          },
+          {
+            foreignKeyName: 'audit_grant_target_user_id_fkey'
+            columns: ['target_user_id']
             referencedRelation: 'app_user'
             referencedColumns: ['id']
           },
