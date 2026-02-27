@@ -91,7 +91,7 @@
 | **QA-10** | todo | 月次レポートテスト | **Step 1**: dry-run で統計集計・ LLM モック応答・ Markdown 生成を確認。<br>**Step 2**: `monthly_report` への保存を検証。<br>**Step 3**: 生徒用 API で自分のレポートのみ取得できることを確認（RLS）。 |
 | **QA-11** | todo | レート制限テスト | **Step 1**: 連続リクエストで 429 が返る。<br>**Step 2**: 制限解除タイミングを確認。 |
 | **QA-12** | todo | 運用・通知テスト | **Step 1**: 強制エラーで notifier が発火する。<br>**Step 2**: 監視ログが残ることを確認。 |
-| **QA-13** | todo | スタッフ権限付与テスト | **Step 1**: `GRANT_ALLOWED_EMAILS` に含まれるスタッフが付与/解除できる。<br>**Step 2**: 含まれないスタッフは 403 が返る。<br>**Step 3**: `audit_grant` にログが残ることを確認。 |
+| **QA-13** | review | スタッフ権限付与テスト | **Step 1**: `GRANT_ALLOWED_EMAILS` に含まれるスタッフが付与/解除できる。<br>**Step 2**: 含まれないスタッフは 403 が返る。<br>**Step 3**: `audit_grant` にログが残ることを確認。 |
 | **QA-14** | todo | レポート UI テスト | **Step 1**: 生徒で `/reports` にアクセスし、自分のレポートが Markdown 表示される。<br>**Step 2**: スタッフで `/admin/reports` にアクセスし、全生徒のレポート一覧が表示される。<br>**Step 3**: CSV ダウンロードが正しい形式で取得できる。 |
 ### 5. 運用 / DevOps (OPS)
 

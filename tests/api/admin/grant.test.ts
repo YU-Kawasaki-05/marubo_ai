@@ -175,4 +175,91 @@ describe('/api/admin/grant (mock supabase)', () => {
     expect(logEntry.action).toBe('grant')
     expect(logEntry.operatorEmail).toBe('staff@example.com')
   })
+
+  it('POST grant with semicolon-separated GRANT_ALLOWED_EMAILS succeeds', async () => {
+    process.env.GRANT_ALLOWED_EMAILS = 'staff@example.com;admin@example.com'
+    resetSupabaseAdminClientForTest()
+
+    const { getSupabaseAdminClient } = await import('../../../src/shared/lib/supabaseAdmin')
+    const supabase = getSupabaseAdminClient()
+    await supabase.from('app_user').insert({
+      id: 'multi-env-target-id',
+      auth_uid: 'multi-env-target-auth',
+      email: 'multi-env-target@example.com',
+      display_name: 'Multi Env Target',
+      role: 'student',
+    })
+
+    const res = await postGrant({ email: 'multi-env-target@example.com', action: 'grant' })
+    const body = await parseJson(res)
+    expect(res.status).toBe(200)
+    expect(body.data.previousRole).toBe('student')
+    expect(body.data.newRole).toBe('staff')
+  })
+
+  it('GET without auth returns 401 UNAUTHORIZED', async () => {
+    const req = new Request(BASE_URL, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    })
+    const res = await grantGet(req)
+    const body = await parseJson(res)
+    expect(res.status).toBe(401)
+    expect(body.error.code).toBe('UNAUTHORIZED')
+  })
+
+  it('GET returns audit log after revoke operation', async () => {
+    const { getSupabaseAdminClient } = await import('../../../src/shared/lib/supabaseAdmin')
+    const supabase = getSupabaseAdminClient()
+    await supabase.from('app_user').insert({
+      id: 'revoke-audit-id',
+      auth_uid: 'revoke-audit-auth',
+      email: 'revoke-audit@example.com',
+      display_name: 'Revoke Audit Target',
+      role: 'student',
+    })
+
+    // Grant then revoke
+    await postGrant({ email: 'revoke-audit@example.com', action: 'grant' })
+    await postGrant({ email: 'revoke-audit@example.com', action: 'revoke' })
+
+    // Check audit log for revoke entry
+    const req = new Request(BASE_URL, { method: 'GET', headers: STAFF_HEADER })
+    const res = await grantGet(req)
+    const body = await parseJson(res)
+    expect(res.status).toBe(200)
+    const revokeEntry = body.data.auditLog.find(
+      (e: any) => e.targetEmail === 'revoke-audit@example.com' && e.action === 'revoke',
+    )
+    expect(revokeEntry).toBeDefined()
+    expect(revokeEntry.operatorEmail).toBe('staff@example.com')
+  })
+
+  it('GET audit log records both grant and revoke for same user', async () => {
+    const { getSupabaseAdminClient } = await import('../../../src/shared/lib/supabaseAdmin')
+    const supabase = getSupabaseAdminClient()
+    await supabase.from('app_user').insert({
+      id: 'both-audit-id',
+      auth_uid: 'both-audit-auth',
+      email: 'both-audit@example.com',
+      display_name: 'Both Audit Target',
+      role: 'student',
+    })
+
+    // Grant then revoke
+    await postGrant({ email: 'both-audit@example.com', action: 'grant' })
+    await postGrant({ email: 'both-audit@example.com', action: 'revoke' })
+
+    // Check audit log has both entries
+    const req = new Request(BASE_URL, { method: 'GET', headers: STAFF_HEADER })
+    const res = await grantGet(req)
+    const body = await parseJson(res)
+    expect(res.status).toBe(200)
+    const entries = body.data.auditLog.filter(
+      (e: any) => e.targetEmail === 'both-audit@example.com',
+    )
+    expect(entries).toHaveLength(2)
+    const actions = entries.map((e: any) => e.action).sort()
+    expect(actions).toEqual(['grant', 'revoke'])
+  })
 })
