@@ -64,6 +64,23 @@ class MockQuery<T extends Record<string, any>> implements PromiseLike<SelectResp
     return this
   }
 
+  ilike(field: keyof T, pattern: string) {
+    // '%keyword%' → case-insensitive includes
+    const keyword = String(pattern).replace(/%/g, '').toLowerCase()
+    this.filters.push((row) => String(row[field]).toLowerCase().includes(keyword))
+    return this
+  }
+
+  gte(field: keyof T, value: any) {
+    this.filters.push((row) => row[field] >= value)
+    return this
+  }
+
+  lt(field: keyof T, value: any) {
+    this.filters.push((row) => row[field] < value)
+    return this
+  }
+
   or(condition: string) {
     // Support pattern: email.ilike.%keyword% OR label.ilike.%keyword%
     const match = condition.match(/\.ilike\.\%(.+)\%/)
@@ -229,6 +246,18 @@ class MockSupabaseAdminClient {
               id: 'mock-staff-auth',
               email: 'staff@example.com',
               app_metadata: { role: 'staff' },
+            },
+          },
+          error: null,
+        }
+      }
+      if (token === 'student-token') {
+        return {
+          data: {
+            user: {
+              id: 'mock-student-auth',
+              email: 'student@example.com',
+              app_metadata: { role: 'student' },
             },
           },
           error: null,
