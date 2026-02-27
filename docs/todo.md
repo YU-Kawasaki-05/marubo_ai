@@ -71,7 +71,7 @@
 | **FE-07** | todo | スタッフ会話検索 UI | **Step 1**: `/admin/conversations` ページを作成（一覧 + フィルタ）。<br>**Step 2**: 会話詳細（メッセージ/画像）を表示。<br>**Step 3**: ページネーション/検索結果の空状態を整備。 |
 | **FE-08** | todo | 生徒用レポートページ | **Step 1**: `/reports` ページを作成（月選択 + 記事風レポート表示）。<br>**Step 2**: `react-markdown` + `remark-gfm` で Markdown レンダリング（note/Zenn風の1カラムデザイン）。<br>**Step 3**: チャット画面から「📊 レポート」ボタンで遷移できるようにする。<br>**Step 4**: 未生成月の表示（「まだ生成されていません」）を実装。 |
 | **FE-09** | todo | スタッフ用レポート管理 UI | **Step 1**: `/admin/reports` ページを作成（全生徒レポート一覧 + ステータス表示）。<br>**Step 2**: 手動生成（dry-run / 本実行）ボタンを配置。<br>**Step 3**: 失敗生徒の個別再生成ボタン。<br>**Step 4**: CSV ダウンロードボタンを配置。 |
-| **FE-10** | todo | スタッフ権限付与 UI | **Step 1**: `/admin/grant` 画面でメール入力→権限付与。<br>**Step 2**: 現在のスタッフ一覧 + 操作履歴を表示。<br>**Step 3**: 解除ボタン・確認ダイアログ・バリデーション。<br>仕様: `docs/admin/grant.md` |
+| **FE-10** | review | スタッフ権限付与 UI | **Step 1**: `/admin/grant` 画面でメール入力→権限付与。<br>**Step 2**: 現在のスタッフ一覧 + 操作履歴を表示。<br>**Step 3**: 解除ボタン・確認ダイアログ・バリデーション。<br>仕様: `docs/admin/grant.md` |
 
 ### 4. テスト & QA (QA)
 
