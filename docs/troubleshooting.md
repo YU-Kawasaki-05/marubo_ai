@@ -136,7 +136,21 @@ WHERE auth_uid = '<paste-actual-auth-uid-here>';
 
 JWT をデコードして `app_metadata.role` が想定（`student` or `staff`）になっているか確認し、必要なら再ログインしてトークンを更新する。
 
-4. **パス規約の徹底**：`{user_id}/{conversation_id}/{message_id}/{uuid}.{ext}`
+4. **パス規約の徹底**：`{user_id}/{uuid}.{ext}`
+   - 署名 URL 発行時点では `conversation_id` / `message_id` が未確定のため、`user_id` + UUID で一意性を確保する
+   - `conversation_id` との紐づけは `attachments` テーブルの `message_id` 経由で行う
+
+### 既知の制約（添付画像機能）
+
+| 項目 | 制約 |
+|------|------|
+| **対応形式** | JPEG / PNG / WebP のみ（`ALLOWED_MIME_TYPES`） |
+| **最大サイズ** | 5 MB / 枚（`MAX_FILE_SIZE_BYTES`） |
+| **最大枚数** | 3 枚 / メッセージ（`MAX_ATTACHMENTS_PER_MESSAGE`） |
+| **署名 URL 有効期限** | アップロード用: 60 秒 / 表示用: 600 秒（10 分） |
+| **クライアント圧縮** | 未実装（SPEC-08 では長辺 1280px / JPEG 品質 0.8 を規定。β版では未適用） |
+| **失敗時の再試行** | アップロード失敗は 1 枚ずつ `error` ステータスになる。自動再試行なし。ユーザーが再送信で対応 |
+| **Storage 保持期間** | 仕様上 1 年（SPEC-08）。Lifecycle rule は Supabase 側で手動設定が必要 |
 
 ---
 
