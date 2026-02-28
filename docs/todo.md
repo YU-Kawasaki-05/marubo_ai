@@ -87,7 +87,7 @@
 | **QA-06** | review | `/api/admin/allowlist` API テスト | (QA-02に統合) |
 | **QA-07** | review | Supabase モック E2E | (実装済み) MOCK_SUPABASE を用いたテスト環境整備済み。 |
 | **QA-08** | review | 画像添付の統合テスト | (実装済み) `tests/api/attachments-flow.integration.test.ts` を新規作成。署名URL取得→チャット保存→会話詳細取得の一連フローを検証。単一画像・複数画像(3枚)・添付なし・署名失敗・storagePath一貫性の5テストケースを網羅。 |
-| **QA-09** | todo | スタッフ会話検索テスト | **Step 1**: staff 権限で一覧/詳細が取れる。<br>**Step 2**: 生徒ユーザーではアクセス不可 (403/401)。 |
+| **QA-09** | review | スタッフ会話検索テスト | (実装済み) `tests/api/admin/conversations-auth.test.ts` を新規作成。9テストケース: staff で一覧/詳細取得（複数生徒横断）、student トークンで 403、認証なしで 401、無効トークンで 401（一覧/詳細両方）。 |
 | **QA-10** | todo | 月次レポートテスト | **Step 1**: dry-run で統計集計・ LLM モック応答・ Markdown 生成を確認。<br>**Step 2**: `monthly_report` への保存を検証。<br>**Step 3**: 生徒用 API で自分のレポートのみ取得できることを確認（RLS）。 |
 | **QA-11** | todo | レート制限テスト | **Step 1**: 連続リクエストで 429 が返る。<br>**Step 2**: 制限解除タイミングを確認。 |
 | **QA-12** | todo | 運用・通知テスト | **Step 1**: 強制エラーで notifier が発火する。<br>**Step 2**: 監視ログが残ることを確認。 |
