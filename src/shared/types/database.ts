@@ -89,6 +89,40 @@ export type AuditGrantInsert = Omit<AuditGrantRow, 'id' | 'created_at'> & {
   created_at?: string
 }
 
+export type MonthlyReportStatus = 'pending' | 'generating' | 'generated' | 'failed'
+
+export type MonthlyReportRow = {
+  id: string
+  user_id: string
+  month: string
+  status: MonthlyReportStatus
+  content: string | null
+  stats: Json | null
+  llm_model: string | null
+  llm_tokens_in: number
+  llm_tokens_out: number
+  error_message: string | null
+  generated_at: string | null
+  created_at: string
+}
+
+export type MonthlyReportInsert = {
+  id?: string
+  user_id: string
+  month: string
+  status?: MonthlyReportStatus
+  content?: string | null
+  stats?: Json | null
+  llm_model?: string | null
+  llm_tokens_in?: number
+  llm_tokens_out?: number
+  error_message?: string | null
+  generated_at?: string | null
+  created_at?: string
+}
+
+export type MonthlyReportUpdate = Partial<Omit<MonthlyReportRow, 'id' | 'user_id' | 'month'>>
+
 export type Database = {
   public: {
     Tables: {
@@ -228,6 +262,19 @@ export type Database = {
             foreignKeyName: 'attachments_message_id_fkey'
             columns: ['message_id']
             referencedRelation: 'messages'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      monthly_report: {
+        Row: MonthlyReportRow
+        Insert: MonthlyReportInsert
+        Update: MonthlyReportUpdate
+        Relationships: [
+          {
+            foreignKeyName: 'monthly_report_user_id_fkey'
+            columns: ['user_id']
+            referencedRelation: 'app_user'
             referencedColumns: ['id']
           },
         ]

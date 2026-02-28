@@ -8,6 +8,7 @@ import type {
   AuditAllowlistRow,
   AuditGrantRow,
   Database,
+  MonthlyReportRow,
 } from '../types/database'
 
 type TableName = keyof Database['public']['Tables']
@@ -24,6 +25,7 @@ type TableMap = {
   conversations: ConversationRow[]
   messages: MessageRow[]
   attachments: AttachmentRow[]
+  monthly_report: MonthlyReportRow[]
 }
 
 type FilterFn<T> = (row: T) => boolean
@@ -235,6 +237,7 @@ class MockSupabaseAdminClient {
     conversations: [],
     messages: [],
     attachments: [],
+    monthly_report: [],
   }
 
   auth = {
