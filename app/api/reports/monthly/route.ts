@@ -1,9 +1,9 @@
 /** @file
- * `POST /api/reports/monthly` Route Handler
- * 入力：Cron Bearer (CRON_SECRET) or Staff Bearer (Supabase token)、body { month?, userId?, dryRun? }
- * 出力：月次レポート生成結果サマリー { month, dryRun, results, notificationSent }
- * 依存：monthlyReport ドメインサービス、requireStaff、AppError
- * セキュリティ：Cron 認証（月末のみ自動実行）or requireStaff() で二重認可
+ * `/api/reports/monthly` Route Handler（GET/POST）
+ * GET: レポート参照（生徒=自分のみ、スタッフ=全員＋ページネーション）
+ * POST: レポート一括生成（Cron or スタッフ手動）
+ * 依存: monthlyReport / reportRead ドメインサービス、requireAuth / requireStaff、AppError
+ * セキュリティ: GET は認証ユーザー全員（ロールで参照範囲制限）、POST は Cron or Staff のみ
  */
 
 export const runtime = 'nodejs'
@@ -16,9 +16,35 @@ import {
   verifyCronAuth,
   type GenerateReportPayload,
 } from '../../../../src/shared/lib/monthlyReport'
+import { getStaffReportList, getStudentReport } from '../../../../src/shared/lib/reportRead'
 import { generateRequestId, parseJsonBody } from '../../../../src/shared/lib/request'
+import { requireAuth } from '../../../../src/shared/lib/requireAuth'
 import { requireStaff } from '../../../../src/shared/lib/requireStaff'
 import { jsonResponse } from '../../../../src/shared/lib/response'
+
+export async function GET(request: Request) {
+  const requestId = generateRequestId('report_get')
+  try {
+    const auth = await requireAuth(request)
+    const url = new URL(request.url)
+    const month = url.searchParams.get('month') ?? getCurrentMonth()
+
+    if (auth.role === 'staff') {
+      const userId = url.searchParams.get('userId') ?? undefined
+      const page = parseInt(url.searchParams.get('page') ?? '1', 10)
+      const limit = parseInt(url.searchParams.get('limit') ?? '20', 10)
+
+      const data = await getStaffReportList({ month, userId, page, limit })
+      return jsonResponse(requestId, data)
+    }
+
+    // Student — own report only
+    const data = await getStudentReport(auth, month)
+    return jsonResponse(requestId, data)
+  } catch (error) {
+    return errorResponse(requestId, error instanceof Error ? error : new Error(String(error)))
+  }
+}
 
 export async function POST(request: Request) {
   const requestId = generateRequestId('monthly_report')
