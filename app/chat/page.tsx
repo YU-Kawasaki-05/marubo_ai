@@ -58,12 +58,20 @@ export default function ChatPage() {
               Beta
             </span>
           </div>
-          <Link
-            href="/"
-            className="text-sm font-medium text-gray-500 hover:text-gray-900"
-          >
-            ✕ 閉じる
-          </Link>
+          <div className="flex items-center gap-4">
+            <Link
+              href="/reports"
+              className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
+            >
+              レポート
+            </Link>
+            <Link
+              href="/"
+              className="text-sm font-medium text-gray-500 hover:text-gray-900"
+            >
+              ✕ 閉じる
+            </Link>
+          </div>
         </header>
 
         <div className="flex flex-1 overflow-hidden">
