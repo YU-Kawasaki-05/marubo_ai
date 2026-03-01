@@ -123,6 +123,38 @@ export type MonthlyReportInsert = {
 
 export type MonthlyReportUpdate = Partial<Omit<MonthlyReportRow, 'id' | 'user_id' | 'month'>>
 
+export type UsageCounterRow = {
+  id: string
+  user_id: string
+  day: string
+  questions: number
+  tokens_in: number
+  tokens_out: number
+  created_at: string
+}
+
+export type UsageCounterInsert = {
+  id?: string
+  user_id: string
+  day: string
+  questions?: number
+  tokens_in?: number
+  tokens_out?: number
+  created_at?: string
+}
+
+export type RateLimiterRow = {
+  key: string
+  window_start: string
+  count: number
+}
+
+export type RateLimiterInsert = {
+  key: string
+  window_start: string
+  count?: number
+}
+
 export type Database = {
   public: {
     Tables: {
@@ -278,6 +310,25 @@ export type Database = {
             referencedColumns: ['id']
           },
         ]
+      }
+      usage_counters: {
+        Row: UsageCounterRow
+        Insert: UsageCounterInsert
+        Update: Partial<UsageCounterRow>
+        Relationships: [
+          {
+            foreignKeyName: 'usage_counters_user_id_fkey'
+            columns: ['user_id']
+            referencedRelation: 'app_user'
+            referencedColumns: ['id']
+          },
+        ]
+      }
+      rate_limiter: {
+        Row: RateLimiterRow
+        Insert: RateLimiterInsert
+        Update: Partial<RateLimiterRow>
+        Relationships: []
       }
     }
     Views: Record<string, never>

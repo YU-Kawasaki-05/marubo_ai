@@ -2,17 +2,20 @@
  * `/api/chat` Route Handler
  * 機能：チャットメッセージを受信し、AIからの応答をストリーミングで返す。
  *   添付画像がある場合は attachments テーブルにも永続化する。
+ *   分間レート制限（10 req/min）と月間クォータ（100 問/月）を適用。
  * 入力：JSON { messages: UIMessage[], attachments?: { storagePath, mimeType, size }[] }
  * 出力：Streaming Text Response
- * 依存：Vercel AI SDK, OpenAI, Supabase Auth
- * セキュリティ：ログイン済みユーザーのみ実行可能。
+ * 依存：Vercel AI SDK, OpenAI, Supabase Auth, rateLimit
+ * セキュリティ：ログイン済みユーザーのみ実行可能。レート制限で過剰利用を防止。
  */
 
 import { openai } from '@ai-sdk/openai'
 import { createClient } from '@supabase/supabase-js'
 import { streamText, type UIMessage } from 'ai'
 
+import { AppError } from '@shared/lib/errors'
 import { notifyError } from '@shared/lib/notifier'
+import { checkMinuteRate, checkMonthlyQuota, incrementUsage, resolveAppUserId } from '@shared/lib/rateLimit'
 import { getSupabaseAdminClient } from '@shared/lib/supabaseAdmin'
 import type { Database } from '@shared/types/database'
 import { convertSafeMessages } from '@shared/utils/ai-message-converter'
@@ -67,10 +70,14 @@ export async function POST(req: Request) {
       return new Response('Unauthorized: Invalid token', { status: 401 })
     }
 
-    // 2. ユーザーからのメッセージデータを受け取る
+    // 2. レート制限チェック（分間 + 月間クォータ）
+    const appUserId = await resolveAppUserId(user.id)
+    await checkMinuteRate(appUserId)
+    await checkMonthlyQuota(appUserId)
+
+    // 3. ユーザーからのメッセージデータを受け取る
     // クライアント(useChat)から送られるメッセージは UI Message 形式なので、
-    // 自作の Adapter 関数を使用して、安全に Model Message 形式に変換する。
-    // convertToModelMessages のバグ(undefined parts)を回避する。
+    // 自作の Adapter 関数を使って安全に Model Message 形式に変換する。
     const requestBody = (await req.json()) as {
       messages?: UIMessageWithLegacyContent[]
       attachments?: AttachmentInput[]
@@ -101,7 +108,7 @@ export async function POST(req: Request) {
       ).padStart(2, '0')}`
     }
 
-    // 3. AI（OpenAI）に応答を生成させる
+    // 4. AI（OpenAI）に応答を生成させる
     // streamText関数を使うと、AIの回答を少しずつ（ストリーミング）返せる
     const result = await streamText({
       model: openai('gpt-4o-mini'), // コストが安くて高速なモデルを指定
@@ -157,6 +164,9 @@ export async function POST(req: Request) {
             }))
             await supabaseAdmin.from('attachments').insert(attachmentRows)
           }
+
+          // 利用カウンタを +1（月間クォータ管理用）
+          await incrementUsage(appUserId)
         } catch (saveError) {
           console.error('Chat save error:', saveError)
           // 保存失敗はレスポンスには影響させない（ログのみ）
@@ -164,7 +174,7 @@ export async function POST(req: Request) {
       },
     })
 
-    // 4. ストリーミング形式でレスポンスを返す（conversationId をヘッダで返す）
+    // 5. ストリーミング形式でレスポンスを返す（conversationId をヘッダで返す）
     const response = result.toUIMessageStreamResponse()
     const headers = new Headers(response.headers)
     headers.set('x-conversation-id', conversationId)
@@ -174,6 +184,23 @@ export async function POST(req: Request) {
       headers,
     })
   } catch (err) {
+    // レート制限 / クォータ超過 → 429
+    if (err instanceof AppError && err.status === 429) {
+      void notifyError('S2', 'レート制限発動', `${err.code}: ${err.message}`)
+      return new Response(JSON.stringify({ error: err.message }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
+    // ユーザー解決失敗 → 403
+    if (err instanceof AppError && err.status === 403) {
+      return new Response(JSON.stringify({ error: err.message }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    }
+
     console.error('Chat API Error:', err)
     const errorMessage = err instanceof Error ? err.message : 'Unknown Error'
     void notifyError('S1', 'LLM 全経路失敗', errorMessage)

@@ -128,6 +128,13 @@ vi.mock('@shared/lib/supabaseAdmin', () => ({
   resetSupabaseAdminClientForTest: () => {},
 }))
 
+vi.mock('@shared/lib/rateLimit', () => ({
+  resolveAppUserId: async () => 'mock-student-id',
+  checkMinuteRate: async () => {},
+  checkMonthlyQuota: async () => {},
+  incrementUsage: async () => {},
+}))
+
 vi.mock('@ai-sdk/openai', () => ({
   openai: () => ({}),
 }))
