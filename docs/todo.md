@@ -54,7 +54,7 @@
 | **BE-14** | review | 月次レポート生成 API | **Step 1** (review): `monthly_report` テーブルマイグレーション + 型定義 + MockQuery 対応。RLS: 生徒=自分のみ/スタッフ=全件/書込=Service Role のみ。<br>**Step 2-6** (review): `POST /api/reports/monthly` 実装（Cron/手動認証、月末判定、統計集計、LLM分析、DB保存、Resend通知）。テスト15件追加。<br>仕様: `docs/reports/monthly.md` |
 | **BE-15** | review | レポート閲覧・CSV API | **Step 1** (review): `GET /api/reports/monthly` 実装（生徒=自分のみ、スタッフ=全員＋ページネーション）。`requireAuth` ヘルパー追加。<br>**Step 2** (review): `GET /api/reports/monthly/csv` 実装（スタッフのみ、text/csv＋BOM＋Content-Disposition）。<br>**Step 3** (review): `src/features/reports/toCsv.ts` ユーティリティ（CSV インジェクション防止）。テスト17件追加。 |
 | **BE-16** | review | 監視・通知ユーティリティ | (実装済み) **Step 1**: `src/shared/lib/notifier.ts` を作成。S1=Resend メール即時送信、S2=console.warn、S3=console.info。5分デバウンス付き。テスト13件追加(`tests/shared/lib/notifier.test.ts`)。<br>**Step 2**: `/api/chat`(S1: LLM全経路失敗)、`/api/reports/monthly` POST(S1: レポート生成失敗) / GET(S2: 参照エラー) に通知連携。 |
-| **BE-17** | todo | レート制限/使用量カウンター | **Step 1**: `usage_counters` / `rate_limiter` テーブルを追加。<br>**Step 2**: `/api/chat` でレート制限を適用。<br>**Step 3**: レート超過時の応答とログを整備。 |
+| **BE-17** | review | レート制限/使用量カウンター | (実装済み) **Step 1**: `usage_counters` / `rate_limiter` テーブルのマイグレーション＋型定義追加。Mock supabase に新テーブル反映。<br>**Step 2**: `src/shared/lib/rateLimit.ts` を作成。分間レート制限（10 req/min）+ 月間クォータ（100 問/月, `MONTHLY_QUOTA` env で調整可）+ 利用カウンタ増分。`resolveAppUserId` で auth_uid→app_user.id 解決。<br>**Step 3**: `/api/chat` に統合。認証後に分間・月間チェック、`onFinish` で利用カウンタ +1。429 応答時は S2 通知。テスト16件追加(`tests/shared/lib/rateLimit.test.ts`)。 |
 
 ### 3. フロントエンド実装 (FE)
 
