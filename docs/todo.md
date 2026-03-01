@@ -88,11 +88,11 @@
 | **QA-07** | review | Supabase モック E2E | (実装済み) MOCK_SUPABASE を用いたテスト環境整備済み。 |
 | **QA-08** | review | 画像添付の統合テスト | (実装済み) `tests/api/attachments-flow.integration.test.ts` を新規作成。署名URL取得→チャット保存→会話詳細取得の一連フローを検証。単一画像・複数画像(3枚)・添付なし・署名失敗・storagePath一貫性の5テストケースを網羅。 |
 | **QA-09** | review | スタッフ会話検索テスト | (実装済み) `tests/api/admin/conversations-auth.test.ts` を新規作成。9テストケース: staff で一覧/詳細取得（複数生徒横断）、student トークンで 403、認証なしで 401、無効トークンで 401（一覧/詳細両方）。 |
-| **QA-10** | todo | 月次レポートテスト | **Step 1**: dry-run で統計集計・ LLM モック応答・ Markdown 生成を確認。<br>**Step 2**: `monthly_report` への保存を検証。<br>**Step 3**: 生徒用 API で自分のレポートのみ取得できることを確認（RLS）。 |
+| **QA-10** | review | 月次レポートテスト | (実装済み) `tests/api/reports/report-flow.integration.test.ts` を新規作成。6テストケース: staff読取でuserId返却、生徒は自分のレポートのみ取得、他生徒のレポート不可、dry-run非永続→本実行永続、単一ユーザー生成+stats検証、userId指定再生成。既存 `monthly.test.ts`(15件) + `report-read.test.ts`(17件) と合わせて計38件。 |
 | **QA-11** | todo | レート制限テスト | **Step 1**: 連続リクエストで 429 が返る。<br>**Step 2**: 制限解除タイミングを確認。 |
 | **QA-12** | todo | 運用・通知テスト | **Step 1**: 強制エラーで notifier が発火する。<br>**Step 2**: 監視ログが残ることを確認。 |
 | **QA-13** | review | スタッフ権限付与テスト | **Step 1**: `GRANT_ALLOWED_EMAILS` に含まれるスタッフが付与/解除できる。<br>**Step 2**: 含まれないスタッフは 403 が返る。<br>**Step 3**: `audit_grant` にログが残ることを確認。 |
-| **QA-14** | todo | レポート UI テスト | **Step 1**: 生徒で `/reports` にアクセスし、自分のレポートが Markdown 表示される。<br>**Step 2**: スタッフで `/admin/reports` にアクセスし、全生徒のレポート一覧が表示される。<br>**Step 3**: CSV ダウンロードが正しい形式で取得できる。 |
+| **QA-14** | review | レポート UI テスト | (実装済み) `tests/features/admin/reports/hooks.test.tsx` を新規作成。7テストケース: `useReportsQuery` でレポート一覧取得(userId/status含む)・空月、`useReportsMutation` で生成(dryRun含む)・再生成・CSVダウンロード(blob+DOM)・student権限で403。mockFetcherでルートハンドラ直接呼び出し。 |
 ### 5. 運用 / DevOps (OPS)
 
 | ID | Status | 概要 | 詳細ステップ (Step) |
