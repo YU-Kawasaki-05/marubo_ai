@@ -34,6 +34,7 @@ type StudentReportResponse = {
 
 type StaffReportItem = {
   id: string
+  userId: string
   month: string
   status: string
   generatedAt: string | null
@@ -125,6 +126,7 @@ export async function getStaffReportList(
     const user = userMap.get(r.user_id)
     return {
       id: r.id,
+      userId: r.user_id,
       month: r.month,
       status: r.status,
       generatedAt: r.generated_at,

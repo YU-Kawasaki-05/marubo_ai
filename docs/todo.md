@@ -70,7 +70,7 @@
 | **FE-06** | review | 添付画像の表示 | (実装済み) `ChatLoader` が API レスポンスの `attachments` を抽出しメッセージ ID ごとにマップ化。`MessageBubble` に `AttachmentThumbnails` サブコンポーネントを追加（Supabase Storage 署名 URL でサムネイル描画、最大幅 320px、スケルトンローディング）。`ImageLightbox` モーダルでクリック拡大表示（Escape / 背景クリックで閉じる）。 |
 | **FE-07** | review | スタッフ会話検索 UI | **Step 1**: `/admin/conversations` ページを作成（検索フィルタ + 一覧テーブル）。<br>**Step 2**: 会話詳細パネル（メッセージ＋添付情報）を表示。<br>**Step 3**: ページネーション・空状態・エラー状態を整備。<br>hooks: `useConversationsQuery`, `useConversationDetail`。components: `ConversationSearchForm`, `ConversationDetail`。 |
 | **FE-08** | review | 生徒用レポートページ | **Step 1**: `/reports` ページを作成（月選択 + 記事風レポート表示）。<br>**Step 2**: `react-markdown` + `remark-gfm` で Markdown レンダリング（note/Zenn風の1カラムデザイン）。<br>**Step 3**: チャット画面から「📊 レポート」ボタンで遷移できるようにする。<br>**Step 4**: 未生成月の表示（「まだ生成されていません」）を実装。 |
-| **FE-09** | todo | スタッフ用レポート管理 UI | **Step 1**: `/admin/reports` ページを作成（全生徒レポート一覧 + ステータス表示）。<br>**Step 2**: 手動生成（dry-run / 本実行）ボタンを配置。<br>**Step 3**: 失敗生徒の個別再生成ボタン。<br>**Step 4**: CSV ダウンロードボタンを配置。 |
+| **FE-09** | review | スタッフ用レポート管理 UI | **Step 1**: `/admin/reports` ページを作成（全生徒レポート一覧 + ステータス表示）。<br>**Step 2**: 手動生成（dry-run / 本実行）ボタンを配置。<br>**Step 3**: 失敗生徒の個別再生成ボタン。<br>**Step 4**: CSV ダウンロードボタンを配置。 |
 | **FE-10** | review | スタッフ権限付与 UI | **Step 1**: `/admin/grant` 画面でメール入力→権限付与。<br>**Step 2**: 現在のスタッフ一覧 + 操作履歴を表示。<br>**Step 3**: 解除ボタン・確認ダイアログ・バリデーション。<br>仕様: `docs/admin/grant.md` |
 
 ### 4. テスト & QA (QA)
