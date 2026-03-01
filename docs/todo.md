@@ -53,7 +53,7 @@
 | **BE-13** | review | admin/grant API | **Step 1**: `app/api/admin/grant/route.ts` を実装（`requireStaff()` + `GRANT_ALLOWED_EMAILS` チェック）。<br>**Step 2**: `app_user.role` 更新 + `auth.admin.updateUserById` で `app_metadata.role` 同期。<br>**Step 3**: `audit_grant` テーブルに監査ログ記録。<br>**Step 4**: GET エンドポイント（スタッフ一覧 + 操作履歴）を実装。<br>仕様: `docs/admin/grant.md` |
 | **BE-14** | review | 月次レポート生成 API | **Step 1** (review): `monthly_report` テーブルマイグレーション + 型定義 + MockQuery 対応。RLS: 生徒=自分のみ/スタッフ=全件/書込=Service Role のみ。<br>**Step 2-6** (review): `POST /api/reports/monthly` 実装（Cron/手動認証、月末判定、統計集計、LLM分析、DB保存、Resend通知）。テスト15件追加。<br>仕様: `docs/reports/monthly.md` |
 | **BE-15** | review | レポート閲覧・CSV API | **Step 1** (review): `GET /api/reports/monthly` 実装（生徒=自分のみ、スタッフ=全員＋ページネーション）。`requireAuth` ヘルパー追加。<br>**Step 2** (review): `GET /api/reports/monthly/csv` 実装（スタッフのみ、text/csv＋BOM＋Content-Disposition）。<br>**Step 3** (review): `src/features/reports/toCsv.ts` ユーティリティ（CSV インジェクション防止）。テスト17件追加。 |
-| **BE-16** | todo | 監視・通知ユーティリティ | **Step 1**: `src/shared/lib/notifier.ts` を作成（Sentry/Resend など）。<br>**Step 2**: 重要API (`/api/chat`, `/api/reports/monthly`) の例外で通知を送る。 |
+| **BE-16** | review | 監視・通知ユーティリティ | (実装済み) **Step 1**: `src/shared/lib/notifier.ts` を作成。S1=Resend メール即時送信、S2=console.warn、S3=console.info。5分デバウンス付き。テスト13件追加(`tests/shared/lib/notifier.test.ts`)。<br>**Step 2**: `/api/chat`(S1: LLM全経路失敗)、`/api/reports/monthly` POST(S1: レポート生成失敗) / GET(S2: 参照エラー) に通知連携。 |
 | **BE-17** | todo | レート制限/使用量カウンター | **Step 1**: `usage_counters` / `rate_limiter` テーブルを追加。<br>**Step 2**: `/api/chat` でレート制限を適用。<br>**Step 3**: レート超過時の応答とログを整備。 |
 
 ### 3. フロントエンド実装 (FE)
@@ -103,7 +103,7 @@
 | **OPS-04** | review | README 統合反映 | (完了確認) `README.new.md` が削除され、`README.md` に統合されているか確認する。 |
 | **OPS-05** | todo | Resend セットアップ | **Step 1**: 送信ドメイン/送信元アドレスを確定。<br>**Step 2**: `RESEND_API_KEY` を本番/開発に設定。<br>**Step 3**: `docs/deployment.md` に手順を追記。 |
 | **OPS-06** | todo | Vercel Cron 設定 | **Step 1**: `vercel.json` に Cron 設定を追加（`55 23 * * *` / `Asia/Tokyo`）。<br>**Step 2**: dry-run はクエリパラメータ `?dryRun=true` で切替。通常 Cron は本実行。手動リトライ時に dry-run 選択可。<br>**※ 月末に LLM 分析を実行するため、Vercel Functions のタイムアウトに注意（分割実行戦略は `docs/reports/monthly.md` 参照）**。仕様は `docs/reports/monthly.md` に記載済み。 |
-| **OPS-07** | todo | 監視・通知導入 | **方針確定済み**: β版は Resend メール + Vercel/Supabase ログ。Sentry は任意（将来推奨）。仕様は `docs/operational/monitoring.md` に記載済み。<br>**Step 1**: `src/shared/lib/notifier.ts` を実装（BE-16 と連動）。<br>**Step 2**: `ADMIN_EMAILS` / `MAIL_FROM` を本番環境に設定。 |
+| **OPS-07** | review | 監視・通知導入 | **Step 1** (review): `src/shared/lib/notifier.ts` を実装（BE-16 と連動）。S1/S2/S3 重大度方針 + 5分デバウンス + Resend メール送信。<br>**Step 2** (todo): `ADMIN_EMAILS` / `MAIL_FROM` を本番環境に設定（手動作業）。 |
 | **OPS-08** | todo | 本番環境の秘密情報管理 | **Step 1**: `.env.example` に不足分を追記（`REPORT_LLM_MODEL`, `REPORT_LLM_API_KEY`, `REPORT_MAX_TOKENS_OUT`, `GRANT_ALLOWED_EMAILS` を含む）。<br>**Step 2**: `docs/deployment.md` に必須env一覧を整理。 |
 
 ### 6. チャット機能実装 (CHAT)

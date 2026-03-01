@@ -16,6 +16,7 @@ import {
   verifyCronAuth,
   type GenerateReportPayload,
 } from '../../../../src/shared/lib/monthlyReport'
+import { notifyError } from '../../../../src/shared/lib/notifier'
 import { getStaffReportList, getStudentReport } from '../../../../src/shared/lib/reportRead'
 import { generateRequestId, parseJsonBody } from '../../../../src/shared/lib/request'
 import { requireAuth } from '../../../../src/shared/lib/requireAuth'
@@ -42,6 +43,10 @@ export async function GET(request: Request) {
     const data = await getStudentReport(auth, month)
     return jsonResponse(requestId, data)
   } catch (error) {
+    if (!(error instanceof AppError) || error.status >= 500) {
+      const msg = error instanceof Error ? error.message : String(error)
+      void notifyError('S2', 'レポート参照エラー', msg, requestId)
+    }
     return errorResponse(requestId, error instanceof Error ? error : new Error(String(error)))
   }
 }
@@ -81,6 +86,10 @@ export async function POST(request: Request) {
 
     return jsonResponse(requestId, result)
   } catch (error) {
+    if (!(error instanceof AppError) || error.status >= 500) {
+      const msg = error instanceof Error ? error.message : String(error)
+      void notifyError('S1', '月次レポート生成失敗', msg, requestId)
+    }
     return errorResponse(requestId, error instanceof Error ? error : new Error(String(error)))
   }
 }

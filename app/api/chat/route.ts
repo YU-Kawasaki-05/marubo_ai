@@ -12,6 +12,7 @@ import { openai } from '@ai-sdk/openai'
 import { createClient } from '@supabase/supabase-js'
 import { streamText, type UIMessage } from 'ai'
 
+import { notifyError } from '@shared/lib/notifier'
 import { getSupabaseAdminClient } from '@shared/lib/supabaseAdmin'
 import type { Database } from '@shared/types/database'
 import { convertSafeMessages } from '@shared/utils/ai-message-converter'
@@ -174,8 +175,8 @@ export async function POST(req: Request) {
     })
   } catch (err) {
     console.error('Chat API Error:', err)
-    // エラーの詳細をクライアントに返してデバッグしやすくする (本番では隠すべき)
     const errorMessage = err instanceof Error ? err.message : 'Unknown Error'
+    void notifyError('S1', 'LLM 全経路失敗', errorMessage)
     return new Response(JSON.stringify({ error: errorMessage }), {
       status: 500,
       headers: { 'Content-Type': 'application/json' },
