@@ -14,48 +14,41 @@
 
 ## 環境変数
 
-```ini
-# Supabase
-NEXT_PUBLIC_SUPABASE_URL=
-NEXT_PUBLIC_SUPABASE_ANON_KEY=
-SUPABASE_SERVICE_ROLE_KEY=            # サーバーAPIのみ利用（Edge不可）
-MOCK_SUPABASE=                        # 招待待ち/CIでDBをモックする場合に 'true' を設定（本番では空）
+> **テンプレート**: `.env.example` をコピーして `.env.local` を作成。
 
-# LLM（プライマリ）
-OPENAI_API_KEY=                       # @ai-sdk/openai が自動読み込み
-DEFAULT_MODEL=gpt-4o-mini
+### 必須 ENV 一覧
 
-# LLM（フォールバック用・別ベンダー/別エンドポイント推奨）
-OPENAI_FALLBACK_API_KEY=
-FALLBACK_MODEL=gpt-4o-mini
-TEMPERATURE=0.3
-MAX_TOKENS_OUT=800
+本番環境で必ず設定が必要な環境変数。
 
-# LLM（月次レポート生成用・推論向けモデル）
-REPORT_LLM_MODEL=                     # 例: gpt-4o, claude-sonnet-4-20250514 等
-REPORT_LLM_API_KEY=                   # 未設定時は OPENAI_API_KEY を使用
-REPORT_MAX_TOKENS_OUT=2000
+| 変数名 | 用途 | 設定場所 | 例 |
+|--------|------|---------|-----|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase プロジェクト URL | Vercel + `.env.local` | `https://xxx.supabase.co` |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon キー | Vercel + `.env.local` | `eyJhbG...` |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Service Role キー（サーバー API 用） | Vercel のみ | `eyJhbG...` |
+| `OPENAI_API_KEY` | OpenAI API キー（チャット用） | Vercel + `.env.local` | `sk-...` |
+| `RESEND_API_KEY` | Resend API キー（S1 メール通知用） | Vercel のみ | `re_...` |
+| `ADMIN_EMAILS` | S1 障害通知先（`;` 区切り） | Vercel のみ | `staff1@example.com;staff2@example.com` |
+| `MAIL_FROM` | メール送信元アドレス（Resend で検証済みドメイン） | Vercel のみ | `noreply@your-domain.example` |
+| `GRANT_ALLOWED_EMAILS` | スタッフ権限付与を許可するメールアドレス（`;` 区切り） | Vercel のみ | `admin@example.com` |
 
-# App
-BASE_URL=http://localhost:3000
-ADMIN_EMAILS=staff1@example.com;staff2@example.com  # S1通知先（ロール判定には不使用）
-DEV_ALERT_EMAILS=dev1@example.com
-ADMIN_TASK_TOKEN=                                  # ℹ️ 廃止予定。スタッフ権限付与は GRANT_ALLOWED_EMAILS 方式に統一
-MONTHLY_QUOTA=100
-MAX_IMAGE_LONGEDGE=1280
-APP_TIMEZONE=Asia/Tokyo
+### 任意 ENV 一覧
 
-# Mail
-RESEND_API_KEY=
-MAIL_FROM="noreply@your-domain.example"
+未設定でもデフォルト値で動作する環境変数。
 
-# Monitoring (任意)
-SENTRY_DSN=
-```
+| 変数名 | 用途 | デフォルト | 例 |
+|--------|------|-----------|-----|
+| `REPORT_LLM_MODEL` | レポート生成用 LLM モデル | `gpt-4o-mini` | `gpt-4o` |
+| `REPORT_LLM_API_KEY` | レポート用 LLM API キー | `OPENAI_API_KEY` を使用 | `sk-...` |
+| `REPORT_MAX_TOKENS_OUT` | レポート出力トークン上限 | `2000` | `3000` |
+| `MONTHLY_QUOTA` | 月間質問クォータ（生徒1人あたり） | `100` | `200` |
+| `MOCK_SUPABASE` | インメモリ DB モック有効化 | 未設定（無効） | `true` |
+| `CRON_SECRET` | Vercel Cron 認証トークン | Vercel が自動設定 | （手動設定不要） |
 
-* `ADMIN_EMAILS`：S1 以上の重大障害をメール通知する宛先。ロール付与判定には使用しない。
-* `ADMIN_TASK_TOKEN`：**廃止予定**。スタッフ権限付与は UI (`/admin/grant`) からの操作 + `GRANT_ALLOWED_EMAILS` 制限に統一。新規環境では設定不要。
-* フォールバック用 LLM キーは可能な限り別ベンダー / 別エンドポイントとし、429 / 5xx / Timeout 時に `DEFAULT_MODEL` から `FALLBACK_MODEL` へ自動で切り替える。
+### 注意事項
+
+* `SUPABASE_SERVICE_ROLE_KEY` は **サーバー API（Node.js ランタイム）でのみ使用**。Edge Runtime やクライアント側には絶対に露出させない。
+* `ADMIN_EMAILS` は S1 障害メール通知の宛先。ロール付与判定には使用しない（`GRANT_ALLOWED_EMAILS` を使用）。
+* `CRON_SECRET` は Vercel が自動生成・設定する。手動で設定する必要はない。ローカル開発では未設定のため Cron 認証は常にスキップされる。
 
 ## 開発ワークフロー
 
@@ -384,12 +377,74 @@ supabase db pull
 ### Resend Dashboard
 
 * メール送信状況、Bounce、Complaint の確認
+* 詳細は下記「Resend セットアップ」セクションを参照
 
 ### Sentry（任意）
 
 * エラートラッキング
 * パフォーマンス監視
 * リリースごとのエラー率追跡
+
+---
+
+## Resend セットアップ
+
+S1 重大障害時のメール通知および月次レポート生成完了通知に [Resend](https://resend.com/) を使用する。
+
+### 1. アカウント作成と API キー取得
+
+1. [resend.com](https://resend.com/) でアカウントを作成
+2. ダッシュボード → **API Keys** → **Create API Key**
+   * Name: `marubo-ai-production`（任意）
+   * Permission: `Full access`（送信のみなら `Sending access` でも可）
+3. 生成された API キー（`re_...`）を Vercel の環境変数 `RESEND_API_KEY` に設定
+
+### 2. 送信ドメイン検証（DNS 設定）
+
+> **独自ドメインなしでもテスト可能**: Resend のデフォルト送信元 `onboarding@resend.dev` で開発・テストが可能。本番運用前に独自ドメインを設定する。
+
+1. Resend ダッシュボード → **Domains** → **Add Domain**
+2. 使用するドメイン（例: `your-domain.example`）を入力
+3. 表示された DNS レコードをドメインの DNS 管理画面に追加:
+   * **SPF**: `v=spf1 include:amazonses.com ~all` 相当の TXT レコード
+   * **DKIM**: Resend が指示する CNAME レコード（3 件）
+   * **DMARC**: `v=DMARC1; p=none;` の TXT レコード（推奨）
+4. Resend ダッシュボードで **Verify** をクリック（DNS 伝播に最大 72 時間）
+5. ステータスが **Verified** になったら完了
+
+```bash
+# DNS 設定確認コマンド
+dig TXT your-domain.example          # SPF
+dig CNAME resend._domainkey.your-domain.example  # DKIM
+dig TXT _dmarc.your-domain.example   # DMARC
+```
+
+### 3. 環境変数の設定
+
+Vercel Dashboard → **Settings** → **Environment Variables** で以下を設定:
+
+| 変数 | 値 | 環境 |
+|------|-----|------|
+| `RESEND_API_KEY` | `re_...`（Step 1 で取得） | Production |
+| `ADMIN_EMAILS` | 通知先メール（`;` 区切り） | Production |
+| `MAIL_FROM` | `noreply@your-domain.example`（Step 2 で検証済みドメイン） | Production |
+
+### 4. 動作確認
+
+デプロイ後、以下で通知メールが届くことを確認:
+
+1. **S1 通知テスト**: 意図的にサーバーエラーを発生させるか、Vercel Logs で `[notifier][S1]` ログを確認
+2. **Resend Dashboard**: Emails タブで送信履歴・配信ステータスを確認
+3. **Bounce/Complaint**: Resend Dashboard で不達がないことを確認
+
+### トラブルシューティング
+
+| 症状 | 原因 | 対処 |
+|------|------|------|
+| メールが届かない | `RESEND_API_KEY` 未設定 | Vercel 環境変数を確認。ログに `RESEND_API_KEY or ADMIN_EMAILS not set` が出る |
+| メールが迷惑メールに入る | DNS 未検証 | SPF/DKIM/DMARC レコードを確認（`dig` コマンドで検証） |
+| Resend API 403 | API キーの権限不足 or ドメイン未検証 | Resend ダッシュボードでキー権限とドメインステータスを確認 |
+| `MAIL_FROM` エラー | 送信元ドメインが未検証 | Resend で Verified 済みのドメインを使用する |
 
 ---
 

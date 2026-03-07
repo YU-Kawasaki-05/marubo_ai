@@ -101,10 +101,10 @@
 | **OPS-02** | done | CI 更新 | **Step 1**: (完了) `.github/workflows/test.yml` を作成し、Push時に Lint/Typecheck/Test が実行されるように構成済み。 |
 | **OPS-03** | blocked | Allowlist 変更通知設計 | (ユーザー確認待ち) |
 | **OPS-04** | review | README 統合反映 | (完了確認) `README.new.md` が削除され、`README.md` に統合されているか確認する。 |
-| **OPS-05** | todo | Resend セットアップ | **Step 1**: 送信ドメイン/送信元アドレスを確定。<br>**Step 2**: `RESEND_API_KEY` を本番/開発に設定。<br>**Step 3**: `docs/deployment.md` に手順を追記。 |
+| **OPS-05** | review | Resend セットアップ | (実装済み) `docs/deployment.md` に Resend セットアップセクションを追加: アカウント作成→API キー取得→DNS 検証（SPF/DKIM/DMARC）→ENV 設定→動作確認→トラブルシューティング。手動作業: Resend アカウント作成、DNS レコード追加、Vercel ENV 設定（`RESEND_API_KEY`, `ADMIN_EMAILS`, `MAIL_FROM`）。 |
 | **OPS-06** | review | Vercel Cron 設定 | (実装済み) `vercel.json` を新規作成（`55 14 * * *` = 23:55 JST、UTC 指定）。Vercel Cron は GET リクエストのため、GET ハンドラに Cron 認証+月末判定+生成ロジックを追加。`docs/deployment.md` に dry-run/本実行/再生成の curl コマンド例を明記。`docs/reports/monthly.md` の vercel.json 例・Cron 認証説明を修正（UTC 指定、GET メソッド）。 |
 | **OPS-07** | review | 監視・通知導入 | **Step 1** (review): `src/shared/lib/notifier.ts` を実装（BE-16 と連動）。S1/S2/S3 重大度方針 + 5分デバウンス + Resend メール送信。<br>**Step 2** (todo): `ADMIN_EMAILS` / `MAIL_FROM` を本番環境に設定（手動作業）。 |
-| **OPS-08** | todo | 本番環境の秘密情報管理 | **Step 1**: `.env.example` に不足分を追記（`REPORT_LLM_MODEL`, `REPORT_LLM_API_KEY`, `REPORT_MAX_TOKENS_OUT`, `GRANT_ALLOWED_EMAILS` を含む）。<br>**Step 2**: `docs/deployment.md` に必須env一覧を整理。 |
+| **OPS-08** | review | 本番環境の秘密情報管理 | (実装済み) `.env.example` を刷新: カテゴリ別コメント付き、全使用中 ENV を網羅（`MONTHLY_QUOTA`, `MOCK_SUPABASE`, `CRON_SECRET` 等を追加）。`docs/deployment.md` の ENV セクションを「必須/任意」テーブル形式に整理、設定場所・デフォルト値・注意事項を明記。 |
 
 ### 6. チャット機能実装 (CHAT)
 
