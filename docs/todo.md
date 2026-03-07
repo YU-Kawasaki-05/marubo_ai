@@ -102,7 +102,7 @@
 | **OPS-03** | blocked | Allowlist 変更通知設計 | (ユーザー確認待ち) |
 | **OPS-04** | review | README 統合反映 | (完了確認) `README.new.md` が削除され、`README.md` に統合されているか確認する。 |
 | **OPS-05** | todo | Resend セットアップ | **Step 1**: 送信ドメイン/送信元アドレスを確定。<br>**Step 2**: `RESEND_API_KEY` を本番/開発に設定。<br>**Step 3**: `docs/deployment.md` に手順を追記。 |
-| **OPS-06** | todo | Vercel Cron 設定 | **Step 1**: `vercel.json` に Cron 設定を追加（`55 23 * * *` / `Asia/Tokyo`）。<br>**Step 2**: dry-run はクエリパラメータ `?dryRun=true` で切替。通常 Cron は本実行。手動リトライ時に dry-run 選択可。<br>**※ 月末に LLM 分析を実行するため、Vercel Functions のタイムアウトに注意（分割実行戦略は `docs/reports/monthly.md` 参照）**。仕様は `docs/reports/monthly.md` に記載済み。 |
+| **OPS-06** | review | Vercel Cron 設定 | (実装済み) `vercel.json` を新規作成（`55 14 * * *` = 23:55 JST、UTC 指定）。Vercel Cron は GET リクエストのため、GET ハンドラに Cron 認証+月末判定+生成ロジックを追加。`docs/deployment.md` に dry-run/本実行/再生成の curl コマンド例を明記。`docs/reports/monthly.md` の vercel.json 例・Cron 認証説明を修正（UTC 指定、GET メソッド）。 |
 | **OPS-07** | review | 監視・通知導入 | **Step 1** (review): `src/shared/lib/notifier.ts` を実装（BE-16 と連動）。S1/S2/S3 重大度方針 + 5分デバウンス + Resend メール送信。<br>**Step 2** (todo): `ADMIN_EMAILS` / `MAIL_FROM` を本番環境に設定（手動作業）。 |
 | **OPS-08** | todo | 本番環境の秘密情報管理 | **Step 1**: `.env.example` に不足分を追記（`REPORT_LLM_MODEL`, `REPORT_LLM_API_KEY`, `REPORT_MAX_TOKENS_OUT`, `GRANT_ALLOWED_EMAILS` を含む）。<br>**Step 2**: `docs/deployment.md` に必須env一覧を整理。 |
 

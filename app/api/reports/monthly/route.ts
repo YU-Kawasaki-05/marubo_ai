@@ -1,7 +1,7 @@
 /** @file
  * `/api/reports/monthly` Route Handler（GET/POST）
- * GET: レポート参照（生徒=自分のみ、スタッフ=全員＋ページネーション）
- * POST: レポート一括生成（Cron or スタッフ手動）
+ * GET: Cron トリガー（Vercel Cron → 月末判定 → 生成）/ レポート参照（生徒=自分のみ、スタッフ=全員＋ページネーション）
+ * POST: レポート一括生成（スタッフ手動）
  * 依存: monthlyReport / reportRead ドメインサービス、requireAuth / requireStaff、AppError
  * セキュリティ: GET は認証ユーザー全員（ロールで参照範囲制限）、POST は Cron or Staff のみ
  */
@@ -24,6 +24,26 @@ import { requireStaff } from '../../../../src/shared/lib/requireStaff'
 import { jsonResponse } from '../../../../src/shared/lib/response'
 
 export async function GET(request: Request) {
+  // Cron trigger: Vercel Cron は GET リクエストで呼び出す（Authorization: Bearer CRON_SECRET）
+  if (verifyCronAuth(request)) {
+    const requestId = generateRequestId('monthly_report')
+    try {
+      if (!isLastDayOfMonth()) {
+        return jsonResponse(requestId, { skipped: true, reason: 'not_last_day' })
+      }
+      const month = getCurrentMonth()
+      const result = await generateMonthlyReports({ month })
+      return jsonResponse(requestId, result)
+    } catch (error) {
+      if (!(error instanceof AppError) || error.status >= 500) {
+        const msg = error instanceof Error ? error.message : String(error)
+        void notifyError('S1', '月次レポート生成失敗', msg, requestId)
+      }
+      return errorResponse(requestId, error instanceof Error ? error : new Error(String(error)))
+    }
+  }
+
+  // 通常の GET: レポート参照
   const requestId = generateRequestId('report_get')
   try {
     const auth = await requireAuth(request)

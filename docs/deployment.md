@@ -189,40 +189,67 @@ export const runtime = 'nodejs' // Edge Runtime は使用しない
 
 #### vercel.json
 
+> **重要**: Vercel Cron のスケジュールは **常に UTC** で指定する。`timezone` フィールドは未サポート。
+
 ```json
 {
   "crons": [
-    { 
-      "path": "/api/reports/monthly", 
-      "schedule": "55 23 * * *", 
-      "timezone": "Asia/Tokyo" 
+    {
+      "path": "/api/reports/monthly",
+      "schedule": "55 14 * * *"
     }
   ]
 }
 ```
 
-#### 実装例（月末判定）
+* `55 14 * * *` = 毎日 14:55 UTC = **23:55 JST**
+* Vercel Cron は **GET リクエスト** で呼び出す（`Authorization: Bearer ${CRON_SECRET}` ヘッダ自動付与）
+* `CRON_SECRET` は Vercel が自動生成・自動設定する環境変数（手動設定不要）
+* User-Agent: `vercel-cron/1.0`
 
-```ts
-// app/api/reports/monthly/route.ts
-import { isLastDayOfMonth } from '@shared/utils/date'
+#### 実行フロー
 
-export async function GET(req: Request) {
-  const today = new Date()
-  if (!isLastDayOfMonth(today)) {
-    return Response.json({ message: '月末ではないためスキップ' })
-  }
-  
-  // 月次レポート生成・送信処理
-  // ...
-}
+```
+Vercel Cron (毎日 23:55 JST)
+  → GET /api/reports/monthly (Authorization: Bearer CRON_SECRET)
+  → verifyCronAuth() で認証
+  → isLastDayOfMonth() で月末判定
+    → 月末でない場合: { skipped: true, reason: 'not_last_day' } を返して終了
+    → 月末の場合: 全生徒のレポートを一括生成 → 完了通知メール
 ```
 
-### 手動リトライ
+### 手動実行（スタッフ）
 
-* 管理 UI から対象月を指定して手動実行可能
-* `/app/admin` に「レポート再実行」ボタンを配置
-* 内部的に `/api/reports/monthly?month=2025-01` のように呼び出し
+管理 UI (`/admin/reports`) から対象月を指定して実行する。内部的に `POST /api/reports/monthly` を呼び出す。
+
+#### dry-run（DB 保存なし、LLM 呼び出しのみ）
+
+```bash
+curl -X POST https://<your-domain>/api/reports/monthly \
+  -H "Authorization: Bearer <staff-session-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"month": "2026-03", "dryRun": true}'
+```
+
+#### 本実行（全生徒一括生成）
+
+```bash
+curl -X POST https://<your-domain>/api/reports/monthly \
+  -H "Authorization: Bearer <staff-session-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"month": "2026-03"}'
+```
+
+#### 特定生徒のみ再生成
+
+```bash
+curl -X POST https://<your-domain>/api/reports/monthly \
+  -H "Authorization: Bearer <staff-session-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"month": "2026-03", "userId": "<app_user.id>"}'
+```
+
+> **注意**: スタッフの session token は Supabase Auth のログイントークン。管理 UI からの操作が推奨。
 
 ---
 

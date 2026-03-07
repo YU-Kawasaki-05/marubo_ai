@@ -180,7 +180,7 @@ LLM が各生徒のチャット履歴を分析し、学習傾向・理解度・�
 ### Vercel Cron
 
 ```
-[Cron 23:55 JST] → POST /api/reports/monthly
+[Cron 23:55 JST] → GET /api/reports/monthly (Authorization: Bearer CRON_SECRET)
   → 「今日は月末か？」を判定
   → 月末なら：
     1. 当月アクティブな全生徒を取得
@@ -192,13 +192,14 @@ LLM が各生徒のチャット履歴を分析し、学習傾向・理解度・�
 
 ### vercel.json
 
+> Vercel Cron のスケジュールは常に UTC。`55 14 * * *` = 23:55 JST。
+
 ```json
 {
   "crons": [
     {
       "path": "/api/reports/monthly",
-      "schedule": "55 23 * * *",
-      "timezone": "Asia/Tokyo"
+      "schedule": "55 14 * * *"
     }
   ]
 }
@@ -206,9 +207,9 @@ LLM が各生徒のチャット履歴を分析し、学習傾向・理解度・�
 
 ### Cron 認証
 
-- Vercel Cron は `CRON_SECRET` ヘッダを自動付与する
-- API 側で Vercel の `x-vercel-cron` ヘッダを検証
-- 手動実行時は `requireStaff()` による認証
+- Vercel Cron は `Authorization: Bearer ${CRON_SECRET}` ヘッダを自動付与する（`CRON_SECRET` は Vercel が自動設定）
+- API 側で `verifyCronAuth()` が Authorization ヘッダを検証
+- Cron は GET リクエストで呼び出す。手動実行（POST）時は `requireStaff()` による認証
 
 ### 生成フロー（詳細）
 
