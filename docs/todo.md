@@ -83,7 +83,7 @@
 | **QA-02** | done | API 統合テスト | **Step 1**: `/api/admin/allowlist` に対し、正常なデータを送って 200 OK が返るかテストする。<br>**Step 2**: 不正なデータ（メールアドレス形式違反など）を送って 400 Bad Request が返るかテストする。（`tests/api/admin/allowlist.test.ts` で実装済み） |
 | **QA-03** | todo | フロント E2E | (Playwright等の導入が必要なため、後回しでも可) 手動で「スタッフで追加 → 生徒でログイン」の流れを確認する手順書を作るだけでもOK。 |
 | **QA-04** | done | チャット永続化の回帰テスト | **Step 1 (done)**: 保存→一覧→詳細のハッピーパスを API 統合テストで実装。<br>**Step 2 (done)**: トークンなし/期限切れで 401/403 になることを確認するテストを追加。 |
-| **QA-05** | todo | スクリプトテスト | `scripts/seed-allowlist.ts` を `--dry-run` (書き込まないモード) で実行し、エラーが出ないか確認する。 |
+| **QA-05** | review | スクリプトテスト | (実装済み) `scripts/seed-allowlist.ts` に `--dry-run` フラグを追加（CSV パース+バリデーションのみ、DB 書き込みなし）。`tests/scripts/seed-allowlist.test.ts` を新規作成: parseArgs フラグ解析(6件) + サンプル CSV dry-run パース検証(7件) = 計13テスト。スクリプト冒頭に使い方ドキュメントを明記。 |
 | **QA-06** | review | `/api/admin/allowlist` API テスト | (QA-02に統合) |
 | **QA-07** | review | Supabase モック E2E | (実装済み) MOCK_SUPABASE を用いたテスト環境整備済み。 |
 | **QA-08** | review | 画像添付の統合テスト | (実装済み) `tests/api/attachments-flow.integration.test.ts` を新規作成。署名URL取得→チャット保存→会話詳細取得の一連フローを検証。単一画像・複数画像(3枚)・添付なし・署名失敗・storagePath一貫性の5テストケースを網羅。 |
