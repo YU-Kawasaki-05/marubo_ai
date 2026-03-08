@@ -1,12 +1,15 @@
 /** @file
  * ブラウザ用の Supabase クライアント生成。
  * 入力：public env (`NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`)
- * 出力：`createClient` のインスタンス。
- * 依存：`@supabase/supabase-js`
+ * 出力：`createBrowserClient` のインスタンス（cookie ベースセッション管理）。
+ * 依存：`@supabase/ssr`
  * セキュリティ：public key のみ利用。Service Role は別ファイルで管理する。
+ * 注意：middleware.ts と連携するため @supabase/ssr の createBrowserClient を使用。
+ *   localStorage ではなく cookie にセッションを保存し、SSR/Middleware で読み取り可能にする。
  */
 
-import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import { createBrowserClient } from '@supabase/ssr'
+import type { SupabaseClient } from '@supabase/supabase-js'
 
 import type { Database } from '../types/database'
 
@@ -24,7 +27,7 @@ export function getSupabaseBrowserClient(): SupabaseClient<Database> {
     throw new Error('Supabase public env (NEXT_PUBLIC_SUPABASE_URL / NEXT_PUBLIC_SUPABASE_ANON_KEY) が未設定です。')
   }
 
-  cachedClient = createClient<Database>(supabaseUrl, supabaseAnonKey)
+  cachedClient = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey)
   return cachedClient
 }
 
