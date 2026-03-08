@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { useGrantMutation } from '../../../src/features/admin/grant/hooks/useGrantMutation'
 import { useGrantQuery } from '../../../src/features/admin/grant/hooks/useGrantQuery'
+import { LogoutButton } from '../../../src/shared/components/LogoutButton'
 import { getSupabaseBrowserClient } from '../../../src/shared/lib/supabaseClient'
 
 export default function GrantPage() {
@@ -128,9 +129,12 @@ export default function GrantPage() {
           <h1 className="text-2xl font-bold text-slate-900">スタッフ権限管理</h1>
           <p className="text-sm text-slate-600">スタッフ権限の付与・解除を行います。</p>
         </div>
-        <Link href="/" className="text-sm text-indigo-600 hover:underline">
-          戻る
-        </Link>
+        <div className="flex items-center gap-4">
+          <LogoutButton />
+          <Link href="/" className="text-sm text-indigo-600 hover:underline">
+            戻る
+          </Link>
+        </div>
       </header>
 
       {/* セクション 1: 権限付与フォーム */}

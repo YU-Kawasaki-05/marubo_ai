@@ -17,6 +17,7 @@ import {
   type ReportsQueryParams,
 } from '../../../src/features/admin/reports/hooks/useReportsQuery'
 import { MonthSelector } from '../../../src/features/reports/components/MonthSelector'
+import { LogoutButton } from '../../../src/shared/components/LogoutButton'
 import { getSupabaseBrowserClient } from '../../../src/shared/lib/supabaseClient'
 
 function getCurrentMonth(): string {
@@ -197,9 +198,12 @@ export default function AdminReportsPage() {
             全生徒の月次レポートを確認・生成・ダウンロードします。
           </p>
         </div>
-        <Link href="/" className="text-sm text-indigo-600 hover:underline">
-          戻る
-        </Link>
+        <div className="flex items-center gap-4">
+          <LogoutButton />
+          <Link href="/" className="text-sm text-indigo-600 hover:underline">
+            戻る
+          </Link>
+        </div>
       </header>
 
       {/* セクション 1: 操作パネル */}

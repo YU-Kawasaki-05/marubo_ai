@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 import { AllowlistGuard } from '@features/allowlist/components/AllowlistGuard'
 import { ChatInterface } from '@features/chat/components/ChatInterface'
 import { ConversationSidebar } from '@features/chat/components/ConversationSidebar'
+import { LogoutButton } from '@shared/components/LogoutButton'
 import { getSupabaseBrowserClient } from '@shared/lib/supabaseClient'
 
 export default function ChatPage() {
@@ -65,6 +66,7 @@ export default function ChatPage() {
             >
               レポート
             </Link>
+            <LogoutButton />
             <Link
               href="/"
               className="text-sm font-medium text-gray-500 hover:text-gray-900"

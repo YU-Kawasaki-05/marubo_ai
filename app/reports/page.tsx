@@ -15,6 +15,7 @@ import { AllowlistGuard } from '../../src/features/allowlist/components/Allowlis
 import { MonthSelector } from '../../src/features/reports/components/MonthSelector'
 import { ReportContent } from '../../src/features/reports/components/ReportContent'
 import { useStudentReport } from '../../src/features/reports/hooks/useStudentReport'
+import { LogoutButton } from '../../src/shared/components/LogoutButton'
 import { getSupabaseBrowserClient } from '../../src/shared/lib/supabaseClient'
 
 function getCurrentMonth(): string {
@@ -78,9 +79,12 @@ export default function ReportsPage() {
               月ごとの学習傾向と AI からのアドバイスを確認できます。
             </p>
           </div>
-          <Link href="/chat" className="text-sm text-indigo-600 hover:underline">
-            チャットへ戻る
-          </Link>
+          <div className="flex items-center gap-4">
+            <LogoutButton />
+            <Link href="/chat" className="text-sm text-indigo-600 hover:underline">
+              チャットへ戻る
+            </Link>
+          </div>
         </header>
 
         {/* 月選択 */}

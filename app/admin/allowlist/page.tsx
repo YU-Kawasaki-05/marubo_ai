@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { CsvImportForm } from '../../../src/features/admin/allowlist/components/CsvImportForm'
 import { useAllowlistMutations } from '../../../src/features/admin/allowlist/hooks/useAllowlistMutations'
 import { useAllowlistQuery } from '../../../src/features/admin/allowlist/hooks/useAllowlistQuery'
+import { LogoutButton } from '../../../src/shared/components/LogoutButton'
 import { getSupabaseBrowserClient } from '../../../src/shared/lib/supabaseClient'
 
 type AllowedEmailStatus = 'active' | 'pending' | 'revoked'
@@ -80,9 +81,12 @@ export default function AllowlistPage() {
           <h1 className="text-2xl font-bold text-slate-900">許可メール一覧</h1>
           <p className="text-sm text-slate-600">スタッフ専用の許可メール管理です。</p>
         </div>
-        <Link href="/" className="text-sm text-indigo-600 hover:underline">
-          戻る
-        </Link>
+        <div className="flex items-center gap-4">
+          <LogoutButton />
+          <Link href="/" className="text-sm text-indigo-600 hover:underline">
+            戻る
+          </Link>
+        </div>
       </header>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
