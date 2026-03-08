@@ -1,3 +1,14 @@
+/** @file
+ * ログインページ
+ * 機能: メールアドレス・パスワードでのログイン / 新規登録
+ * ログイン成功後、/api/sync-user の role と allowedEmailStatus に応じてルーティング先を決定
+ *   - staff → /admin/allowlist
+ *   - student (active) → /chat
+ *   - pending → 待機メッセージ表示
+ *   - revoked / not-found → エラーメッセージ表示
+ *   - sync-user 失敗 → /chat にフォールバック
+ * 依存: supabaseClient (browser), /api/sync-user
+ */
 'use client'
 
 import { useRouter } from 'next/navigation'
@@ -11,6 +22,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [messageType, setMessageType] = useState<'info' | 'error' | 'warning'>('info')
 
   const supabase = getSupabaseBrowserClient()
 
@@ -27,11 +39,74 @@ export default function LoginPage() {
       if (error) {
         throw error
       }
-      // ログイン成功したら管理画面へ
-      router.push('/admin/allowlist')
-      // router.refresh() // 必要に応じてキャッシュ更新
+
+      // セッションからトークンを取得
+      const {
+        data: { session },
+      } = await supabase.auth.getSession()
+      const token = session?.access_token
+
+      if (!token) {
+        // トークン取得失敗時はフォールバック
+        router.push('/chat')
+        return
+      }
+
+      // sync-user でロール・許可ステータスを取得してルーティング分岐
+      try {
+        const res = await fetch('/api/sync-user', {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+        })
+
+        if (res.ok) {
+          const data = await res.json()
+          if (data.role === 'staff') {
+            router.push('/admin/allowlist')
+          } else {
+            router.push('/chat')
+          }
+          return
+        }
+
+        // エラーレスポンスを解析
+        const errorData = await res.json()
+        const errorCode = errorData?.error?.code as string | undefined
+
+        if (errorCode === 'ALLOWLIST_PENDING') {
+          setMessageType('warning')
+          setMessage('管理者の承認をお待ちください。承認後にログインできます。')
+          // pending の場合はサインアウトしてセッションをクリア
+          await supabase.auth.signOut()
+          return
+        }
+
+        if (errorCode === 'ALLOWLIST_REVOKED') {
+          setMessageType('error')
+          setMessage('アカウントが停止されています。管理者にお問い合わせください。')
+          await supabase.auth.signOut()
+          return
+        }
+
+        if (errorCode === 'ALLOWLIST_NOT_FOUND') {
+          setMessageType('error')
+          setMessage('許可されていないメールアドレスです。管理者にお問い合わせください。')
+          await supabase.auth.signOut()
+          return
+        }
+
+        // その他のエラーはフォールバック
+        router.push('/chat')
+      } catch {
+        // sync-user 呼び出し失敗時はフォールバック
+        router.push('/chat')
+      }
     } catch (err) {
       const error = err as Error
+      setMessageType('error')
       if (error.message.includes('Invalid login credentials')) {
         setMessage('メールアドレスまたはパスワードが間違っています。')
       } else {
@@ -76,7 +151,15 @@ export default function LoginPage() {
         <h1 className="mb-6 text-center text-2xl font-bold text-slate-800">ログイン</h1>
         
         {message && (
-          <div className="mb-4 rounded bg-blue-50 p-3 text-sm text-blue-700 break-words whitespace-pre-wrap">
+          <div
+            className={`mb-4 rounded p-3 text-sm break-words whitespace-pre-wrap ${
+              messageType === 'error'
+                ? 'bg-red-50 text-red-700'
+                : messageType === 'warning'
+                  ? 'bg-yellow-50 text-yellow-700'
+                  : 'bg-blue-50 text-blue-700'
+            }`}
+          >
             {message}
           </div>
         )}
