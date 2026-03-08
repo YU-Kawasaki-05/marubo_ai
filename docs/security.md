@@ -46,11 +46,45 @@
 8. ユーザーが再ログイン → 新しい JWT（app_metadata.role = 'staff'）を取得
 ```
 
+### Next.js Middleware 認証ガード
+
+* `middleware.ts` を設置し、`/chat`、`/reports`、`/admin/*` へのリクエスト時に **Supabase セッション Cookie を SSR レベルで検証**
+* 未認証の場合は `/login` に 302 リダイレクト（HTML/JS バンドルのダウンロードを防止）
+* `/chat-test` は本番環境（`NODE_ENV === 'production'`）でブロック
+* 依存: `@supabase/ssr`（Cookie ベースのセッション管理）
+* **クライアント側の `AllowlistGuard` は二重チェック**として維持（Middleware はセッションの有無のみ確認し、allowlist ステータスやロールの詳細判定はクライアント側で行う）
+
+### セッション有効期限管理
+
+* `onAuthStateChange` で `TOKEN_REFRESHED`（自動トークンリフレッシュ）と `SIGNED_OUT`（セッション失効）を監視
+* セッション失効時は `SessionExpiredModal` を表示し、ユーザーに再ログインを促す
+* 入力中テキストの消失を防ぐため、失効検知後もモーダル表示で遷移を遅延させ、ユーザーがコピーできる猶予を設ける
+
+### ログアウト
+
+* 全ページ（`/chat`、`/reports`、`/admin/*`）のヘッダーまたはサイドバーに **ログアウトボタン** を配置
+* `supabase.auth.signOut()` でセッションクリア → `/login` にリダイレクト
+* 共有端末でのセキュリティリスクを防止
+
 ### クライアント書き込み禁止
 
 * **すべての DB 書き込みはサーバー API 経由**
 * クライアントから Supabase への直接 INSERT/UPDATE/DELETE は RLS で拒否
 * Service Role を使う API は **Node.js ランタイム強制**（`export const runtime = 'nodejs'`）
+
+---
+
+## サーバーサイドバリデーション
+
+### `/api/chat` の入力検証
+
+| 検証項目 | 制限値 | エラーコード |
+|---------|--------|------------|
+| 添付画像枚数 | ≤ 3（`MAX_ATTACHMENTS_PER_MESSAGE`） | `TOO_MANY_ATTACHMENTS` (400) |
+| メッセージ文字数 | ≤ 2000 文字 | `MESSAGE_TOO_LONG` (400) |
+
+* クライアント側でも同一の制限を適用するが、**サーバー側で必ず再検証**
+* API を直接叩くバイパスを防止し、Storage 容量の不正消費や API コストの暴走を阻止
 
 ---
 
@@ -64,6 +98,7 @@
   * `/app/api/admin/grant/route.ts` — ロール昇格（`requireStaff()` + `GRANT_ALLOWED_EMAILS` 制限）
   * `/app/api/admin/allowlist/route.ts` — 許可メールリスト CRUD（staff UI から呼び出す）
   * `/app/api/reports/monthly/route.ts` — 月次レポート生成（LLM 分析 + DB 保存）
+  * `/app/api/admin/attachments/signed-url/route.ts` — スタッフ用添付画像署名 URL 生成
 
 ### ❌ 使用が禁止される場所
 
@@ -198,10 +233,11 @@ module.exports = {
 
 ### 署名 URL（短寿命）
 
-* **有効期限**：60 秒（`expiresIn: 60`）
-* **発行場所**：`/api/attachments/sign` — Service Role で署名
+* **有効期限**：アップロード用 60 秒 / 表示用 600 秒（10 分）
+* **発行場所**：`/api/attachments/sign`（生徒用）/ `/api/admin/attachments/signed-url`（スタッフ用）— Service Role で署名
 * **アップロード**：クライアントが署名 URL へ直接 PUT
 * **失敗時**：1 回だけ自動再発行を試みる
+* **自動リフレッシュ**: `AttachmentThumbnails` コンポーネントの `onError` ハンドラで署名 URL 失効を検知し、1 回だけ自動再署名を試行（GFX-13 で実装）
 
 ### パス規約
 

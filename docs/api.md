@@ -84,6 +84,7 @@
 | **Auth** | Supabase セッション必須（ログイン済み全ユーザーが利用可） |
 | **Runtime** | Node.js (Edge Runtime ではなく Node.js を利用。※Vercel AI SDK は両対応だが各種ライブラリ互換性のため) |
 | **責務** | ユーザーのメッセージ履歴を受け取り、AI の応答をストリーミング形式 (`text/event-stream`) で返す。 |
+| **サーバーサイド検証** | 添付枚数 ≤ 3（`MAX_ATTACHMENTS_PER_MESSAGE`）、最新メッセージ文字数 ≤ 2000 文字。超過時は 400 エラー |
 
 ### リクエスト
 
@@ -179,6 +180,85 @@ x-conversation-id: <uuid>
 ### タイトル生成ルール
 - 先頭のユーザー発話から先頭 30–50 文字を採用。
 - 話頭が空の場合は `YYYY-MM-DD HH:mm` を採用（例: `2026-01-26 12:00`）。
+
+## `DELETE /api/conversations/[id]` — 会話削除
+
+| | 内容 |
+|---|---|
+| **Method** | `DELETE` |
+| **Auth** | Supabase セッション必須。RLS により本人の会話のみ削除可能 |
+| **Runtime** | Node.js |
+| **責務** | 指定 ID の会話を物理削除する。`messages` と `attachments` は `ON DELETE CASCADE` で自動削除される |
+
+### レスポンス
+
+| 条件 | HTTP | 説明 |
+|------|------|------|
+| 削除成功 | 204 | No Content（ボディなし） |
+| 未認証 | 401 | `UNAUTHORIZED` |
+| 他人の会話を指定 | 403 | `FORBIDDEN` |
+| 会話が存在しない | 404 | `NOT_FOUND` |
+
+> **注意**: Storage 上の添付ファイル（`storage.objects`）の物理削除はベストエフォートで実行される。DB のカスケード削除は即時保証。
+
+---
+
+## `GET /api/usage` — 利用状況取得
+
+| | 内容 |
+|---|---|
+| **Method** | `GET` |
+| **Auth** | Supabase セッション必須 |
+| **Runtime** | Node.js |
+| **責務** | 当月の質問利用数・残数を返却し、クライアントでクォータ表示に利用する |
+
+### レスポンス例
+
+```json
+{
+  "data": {
+    "used": 13,
+    "quota": 100,
+    "remaining": 87,
+    "month": "2026-03"
+  }
+}
+```
+
+> `quota` は環境変数 `MONTHLY_QUOTA`（デフォルト 100）から取得。`used` は `usage_counters` の当月合計。
+
+---
+
+## `POST /api/admin/attachments/signed-url` — 管理者用署名 URL 生成
+
+| | 内容 |
+|---|---|
+| **Method** | `POST` |
+| **Auth** | `requireStaff()` |
+| **Runtime** | Node.js |
+| **責務** | Service Role で Storage の署名 URL を生成し、スタッフが生徒の添付画像を閲覧できるようにする |
+
+### リクエスト
+
+```json
+{
+  "storagePath": "user-uuid/abc123.jpg"
+}
+```
+
+### レスポンス例
+
+```json
+{
+  "data": {
+    "signedUrl": "https://xxx.supabase.co/storage/v1/object/sign/attachments/..."
+  }
+}
+```
+
+> 通常の生徒用署名 URL は RLS ベースだが、スタッフは `app_metadata.role` が JWT に反映されているため Service Role で発行する。
+
+---
 
 ## `/api/admin/allowlist` — 許可メール CRUD
 
@@ -295,18 +375,21 @@ x-conversation-id: <uuid>
 |------|---------|------|------|
 | `/api/health` | GET | ✅ | ヘルスチェック（Edge Runtime） |
 | `/api/sync-user` | POST | ✅ | 初回ログイン同期 + ロール確認 |
-| `/api/chat` | POST | ✅ | 会話 + LLM 呼び出し（Service Role 書き込み） |
+| `/api/chat` | POST | ✅ | 会話 + LLM 呼び出し（Service Role 書き込み）+ 添付枚数/文字数サーバー検証 |
 | `/api/conversations` | GET | ✅ | 会話一覧取得 |
 | `/api/conversations/[id]` | GET | ✅ | 会話詳細取得 |
+| `/api/conversations/[id]` | DELETE | ✅ | 会話削除（CASCADE DELETE で messages/attachments も削除） |
+| `/api/usage` | GET | ✅ | 当月の利用状況（used/quota/remaining）を返却 |
 | `/api/admin/allowlist` | GET/POST/PATCH | ✅ | 許可メール CRUD |
-| `/api/attachments/sign` | POST | 🚧 | Storage 署名 URL を発行。`expiresIn=60s` |
-| `/api/reports/monthly` | POST | 🚧 | 月次レポート一括生成（Cron / 管理 UI）。詳細は `docs/reports/monthly.md` |
-| `/api/reports/monthly` | GET | 🚧 | レポート一覧取得（生徒=自分のみ、スタッフ=全員）。詳細は `docs/reports/monthly.md` |
-| `/api/reports/monthly/csv` | GET | 🚧 | 全生徒の利用統計 CSV ダウンロード（スタッフのみ） |
-| `/api/admin/grant` | POST | 🚧 | スタッフ権限の付与/解除。`GRANT_ALLOWED_EMAILS` 制限。詳細は `docs/admin/grant.md` |
-| `/api/admin/grant` | GET | 🚧 | スタッフ一覧・操作履歴（`GRANT_ALLOWED_EMAILS` 制限） |
-| `/api/admin/conversations` | GET | 🚧 | 全生徒の会話一覧検索（スタッフのみ）。詳細は `docs/admin/conversations.md` |
-| `/api/admin/conversations/[id]` | GET | 🚧 | 会話詳細取得（スタッフのみ） |
+| `/api/attachments/sign` | POST | ✅ | Storage 署名 URL を発行。`expiresIn=60s` |
+| `/api/admin/attachments/signed-url` | POST | ✅ | スタッフ用添付画像署名 URL（Service Role） |
+| `/api/reports/monthly` | POST | ✅ | 月次レポート一括生成（Cron / 管理 UI）。詳細は `docs/reports/monthly.md` |
+| `/api/reports/monthly` | GET | ✅ | レポート一覧取得（生徒=自分のみ、スタッフ=全員）。詳細は `docs/reports/monthly.md` |
+| `/api/reports/monthly/csv` | GET | ✅ | 全生徒の利用統計 CSV ダウンロード（スタッフのみ） |
+| `/api/admin/grant` | POST | ✅ | スタッフ権限の付与/解除。`GRANT_ALLOWED_EMAILS` 制限。詳細は `docs/admin/grant.md` |
+| `/api/admin/grant` | GET | ✅ | スタッフ一覧・操作履歴（`GRANT_ALLOWED_EMAILS` 制限） |
+| `/api/admin/conversations` | GET | ✅ | 全生徒の会話一覧検索（スタッフのみ）。詳細は `docs/admin/conversations.md` |
+| `/api/admin/conversations/[id]` | GET | ✅ | 会話詳細取得（スタッフのみ） |
 
 各エンドポイントの詳細は対応する仕様ドキュメントを参照。
 

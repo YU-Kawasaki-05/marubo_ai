@@ -194,7 +194,24 @@ export async function notifyError(
 
 ---
 
-## 7. 将来の拡張（β 版対象外）
+## 7. 利用状況 API（GFX-16）
+
+`GET /api/usage` エンドポイントにより、生徒が自身の当月利用状況を確認できる。
+
+| フィールド | 説明 |
+|-----------|------|
+| `used` | 当月の質問数（`usage_counters` の当月合計） |
+| `quota` | 月間上限（`MONTHLY_QUOTA`、デフォルト 100） |
+| `remaining` | 残り質問数（`quota - used`） |
+| `month` | 対象月（`YYYY-MM`） |
+
+* チャット画面のヘッダーに「今月の残り質問数」として表示
+* 残り 20% で黄色バッジ、残り 5% で赤色バッジに切り替わる
+* クォータ超過時は `POST /api/chat` が 429 を返し、UI で制限メッセージを表示
+
+---
+
+## 8. 将来の拡張（β 版対象外）
 
 - **Sentry 統合**: `SENTRY_DSN` を設定するだけで有効化できるようにコードを準備
 - **Slack 通知**: Incoming Webhook で S1 通知を Slack にも飛ばす

@@ -43,6 +43,7 @@
 | `MONTHLY_QUOTA` | 月間質問クォータ（生徒1人あたり） | `100` | `200` |
 | `MOCK_SUPABASE` | インメモリ DB モック有効化 | 未設定（無効） | `true` |
 | `CRON_SECRET` | Vercel Cron 認証トークン | Vercel が自動設定 | （手動設定不要） |
+| `MAX_MESSAGE_LENGTH` | チャットメッセージ文字数上限 | `2000` | サーバーサイド検証で使用 |
 
 ### 注意事項
 
@@ -149,6 +150,12 @@ pnpm format
 * **Git 連携**：GitHub リポジトリと自動連携
   * **PR → Preview**：Pull Request ごとにプレビュー環境を自動デプロイ
   * **main → Production**：main ブランチへのマージで本番環境へ自動デプロイ
+
+### Middleware（認証ガード）
+
+* `middleware.ts` が `/chat`、`/reports`、`/admin/*` への未認証アクセスを SSR レベルでブロック
+* 依存: `@supabase/ssr`（Cookie ベースのセッション管理）を追加パッケージとして使用
+* 本番環境では `/chat-test` もブロック（`NODE_ENV === 'production'`）
 
 ### ランタイム設定
 

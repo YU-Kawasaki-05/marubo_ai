@@ -66,6 +66,23 @@
   - β 版規模ではカーソルベースほどの性能要件はないため、シンプルなオフセットを採用
 - **UI**: 「← 前へ」「次へ →」ボタン + 現在ページ / 総ページ表示
 
+### N+1 クエリ最適化（GFX-14）
+
+メッセージ数の取得を JavaScript 側で全件取得後にカウントする方式から、**SQL の `COUNT() GROUP BY` + `OFFSET/LIMIT`** に変更。
+
+```sql
+SELECT c.id, c.title, c.created_at, c.user_id,
+       COUNT(m.id) AS message_count
+FROM conversations c
+LEFT JOIN messages m ON m.conversation_id = c.id
+WHERE ...
+GROUP BY c.id
+ORDER BY c.created_at DESC
+OFFSET :offset LIMIT :limit
+```
+
+これにより、データ量増加時のパフォーマンス劣化を防止。
+
 ---
 
 ## 3. 会話詳細画面
@@ -87,7 +104,7 @@
 |------|------|
 | **ユーザーメッセージ** | プレーンテキスト（右寄せ、青系背景） |
 | **AI メッセージ** | Markdown + KaTeX レンダリング（左寄せ、灰系背景） |
-| **添付画像** | サムネイル表示（最大幅 320px）。クリックで拡大 |
+| **添付画像** | `AttachmentThumbnails` コンポーネントでサムネイル表示（最大幅 320px）。クリックで拡大。署名 URL は `POST /api/admin/attachments/signed-url`（Service Role）で生成（GFX-18） |
 | **タイムスタンプ** | 各メッセージに `HH:mm` を小さく表示 |
 
 ### 閲覧専用

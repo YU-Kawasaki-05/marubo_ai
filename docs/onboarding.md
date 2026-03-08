@@ -59,6 +59,8 @@
 | トピック | 読む順番 / 目的 |
 |----------|------------------|
 | ビジネス・機能概要 | `README.md` → `docs/architecture.md` セクション「機能一覧」
+| 認証・ルーティング | `middleware.ts`（SSR 認証ガード）→ `/api/sync-user`（ロール判定）→ ロール別リダイレクト
+| エラー・ローディング | `app/error.tsx`、`app/loading.tsx`、`app/not-found.tsx`（グローバル）+ 各セグメント別
 | データベース / RLS | `docs/database.md` → `docs/rls.md` → `docs/security.md`
 | 実装規約 | `docs/coding-guidelines.md`（TypeScript/AI/PR）
 | テスト戦略 | `docs/testing.md`（単体・RLS・E2E）

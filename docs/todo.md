@@ -119,6 +119,49 @@
 | **CHAT-05** | progress | チャット永続化 & 履歴UI | **Blocker解消**: DB パスワード受領済み。<br>**Step 1 (done)**: Supabase スキーマ適用を確認（`db push` 済み）。<br>**Step 2 (done)**: `/api/chat` に onFinish 保存処理を追加し、`conversationId` をヘッダで返す。<br>**Step 3 (done)**: `/api/conversations` (GET 一覧) を実装（limit/cursor、`created_at desc`）。<br>**Step 4 (done)**: `/api/conversations/[id]` (GET 詳細) を実装（messages 昇順）。<br>**Step 5 (done)**: フロント サイドバー最小版を実装（一覧取得→クリックで詳細表示、最新会話で選択更新）。<br>&nbsp;&nbsp;**Step 5-1 (done)**: `ConversationSidebar.tsx` 新規作成（一覧fetch、表示、もっと読む、ハイライト）。<br>&nbsp;&nbsp;**Step 5-2 (done)**: `ChatInterface.tsx` を3層構成に改修（`ChatSession` / `ChatLoader` / `ChatInterface`）。<br>&nbsp;&nbsp;**Step 5-3 (done)**: `app/chat/page.tsx` を2カラムレイアウトに変更。`layout.tsx` で metadata 分離。<br>&nbsp;&nbsp;**Step 5-4 (done)**: APIレスポンス形式に合わせて `ConversationSidebar` の解析を `{ data: [...] }` に修正。<br>&nbsp;&nbsp;**Step 5-5 (done)**: `ChatLoader` で `{ data: { messages: [...] } }` を UIMessage に変換（`parts` 付与）。<br>&nbsp;&nbsp;**Step 5-6 (done)**: サイドバー幅指定の重複を整理。<br>&nbsp;&nbsp;**Step 5-7 (done)**: `tsc --noEmit` 通過＆ブラウザで一覧/詳細/新規作成の動作確認。<br>**Step 6 (done)**: 保存→一覧→詳細の統合テストを1件追加。 |
 | **CHAT-06** | done | 画像添付チャット | **Step 1 (done)**: `SPEC-08` 確定済み（`docs/attachments.md`）。JPEG/PNG/WebP、5MB/枚、3枚/メッセージ、1280px圧縮。<br>**Step 2 (done)**: `BE-08`(attachments テーブル+RLS), `BE-09`(Storage バケット手順), `BE-10`(署名URL API), `BE-11`(チャット保存で添付永続化) と `FE-05`(画像添付 UI), `FE-06`(添付画像表示+ライトボックス) をすべて実装済み。<br>**Step 3 (done)**: `QA-08` で署名→チャット保存→会話詳細の統合テスト 5 ケースを通過。 |
 
+### 7. Gap Fix（GFX）— 未決定事項の修正
+
+`docs/AI-Generated01/03_gap_analysis_and_proposals.md` で洗い出された GAP-01〜GAP-27 を修正するタスク群。
+プロンプト集は `docs/AI-Generated01/04_fix_gap_commands.md` を参照。
+
+#### Sprint 1: 認証・セキュリティ基盤
+
+| ID | Status | 対応 GAP | 概要 | 詳細 |
+|----|--------|---------|------|------|
+| **GFX-01** | done | GAP-01 | ログイン後ロール別ルーティング | `app/login/page.tsx` で `/api/sync-user` のレスポンス（role, allowedEmailStatus）に応じて生徒→`/chat`、スタッフ→`/admin/allowlist` にルーティング。pending は待機画面、revoked/not-found はエラー表示。 |
+| **GFX-02** | done | GAP-02 + GAP-11 | Middleware 認証ガード + /chat-test 本番非公開化 | `middleware.ts` を新規作成。`@supabase/ssr` で Supabase セッション cookie を検証し、未認証ユーザーを `/login` にリダイレクト。本番環境で `/chat-test` を遮断。 |
+| **GFX-03** | done | GAP-03 | ログアウト機能 | 全ページ（`/chat`, `/reports`, `/admin/*`）のヘッダーにログアウトボタンを追加。`supabase.auth.signOut()` → `/login` にリダイレクト。共通フック `useLogout` を実装。 |
+| **GFX-04** | done | GAP-14 | Error Boundary 追加 | `app/error.tsx`（ルートレベル）と `app/chat/error.tsx`（チャット専用）を作成。再試行ボタン + ホームリンク付き。開発環境のみエラー詳細を表示。 |
+
+#### Sprint 2: UX 安定化
+
+| ID | Status | 対応 GAP | 概要 | 詳細 |
+|----|--------|---------|------|------|
+| **GFX-05** | done | GAP-04 | セッション有効期限管理 | `onAuthStateChange` の `SIGNED_OUT` / `TOKEN_REFRESHED` イベントを適切にハンドリング。セッション切れ時にモーダル表示。`SessionExpiredModal` コンポーネント追加。 |
+| **GFX-06** | done | GAP-05 | ネットワークエラー/オフライン対応 | `useNetworkStatus` フック + `OfflineBanner` コンポーネント。ChatInterface の `onError` を改善し、`alert()` からインライン表示に変更。 |
+| **GFX-07** | done | GAP-16 | モバイル会話サイドバー対応 | `app/chat/page.tsx` にハンバーガーメニューボタン + ドロワー表示を追加。会話選択時にドロワー自動閉じ。デスクトップ表示はそのまま維持。 |
+| **GFX-08** | done | GAP-25 | loading.tsx / not-found.tsx 追加 | `app/loading.tsx`（グローバルスピナー）、`app/not-found.tsx`（カスタム404）、`app/chat/loading.tsx`（スケルトン UI）を作成。 |
+
+#### Sprint 3: プロダクト品質向上
+
+| ID | Status | 対応 GAP | 概要 | 詳細 |
+|----|--------|---------|------|------|
+| **GFX-09** | done | GAP-06 | React ConfirmDialog 化 | `src/shared/components/ConfirmDialog.tsx` を作成。管理画面（`/admin/grant`, `/admin/reports`, `/admin/allowlist`）の `window.confirm/alert` を全て置換。Escape キー対応。 |
+| **GFX-10** | done | GAP-07 | 会話削除機能 | `DELETE /api/conversations/[id]` API を実装（RLS で本人のみ）。ConversationSidebar にゴミ箱アイコン + 確認ダイアログ付き削除ボタン。CASCADE DELETE で messages/attachments も削除。 |
+| **GFX-11** | done | GAP-10 | /admin ダッシュボード化 | `app/admin/page.tsx` をカードリンクのダッシュボードに全面書き替え。許可リスト管理・権限管理・会話検索・レポート管理の4枚。レスポンシブ対応。 |
+| **GFX-12** | done | GAP-15 | パスワードリセット機能 | `app/login/page.tsx` に「パスワードを忘れた方」リンク追加。`app/reset-password/page.tsx` を新規作成（`PASSWORD_RECOVERY` イベント検知 + `updateUser` でパスワード更新）。 |
+
+#### Sprint 4: パフォーマンス・セキュリティ堅牢化
+
+| ID | Status | 対応 GAP | 概要 | 詳細 |
+|----|--------|---------|------|------|
+| **GFX-13** | done | GAP-08 | 署名 URL 期限切れ時の自動再取得 | `MessageBubble.tsx` の `AttachmentThumbnails` に `onError` ハンドラ追加。期限切れ検知時に Supabase Storage の `createSignedUrl` で自動再署名（1回リトライ）。 |
+| **GFX-14** | done | GAP-13 | 会話検索 N+1 クエリ最適化 | `GET /api/admin/conversations` で PostgreSQL `COUNT() GROUP BY` + `OFFSET/LIMIT` に変更。JS 側の全件取得→スライスを排除。 |
+| **GFX-15** | done | GAP-17 + GAP-26 | サーバーサイドバリデーション強化 | `POST /api/chat` で `attachments.length <= MAX_ATTACHMENTS_PER_MESSAGE`（3枚）と最新メッセージの文字数（2000文字以内）をサーバー側で検証。超過時は 400。 |
+| **GFX-16** | done | GAP-18 | 生徒向け利用状況表示 | `GET /api/usage` エンドポイントを追加（当月の `usage_counters` 集計）。チャット画面ヘッダーに「残り 87/100」表示。残り20%で黄色、5%で赤色。 |
+| **GFX-17** | done | GAP-22 | チャット入力 textarea 化 | `ChatInterface.tsx` の `<input>` を `<textarea>` に変更。`rows=1` + JS auto-resize + `max-height` スクロール。Shift+Enter で改行、Enter で送信。 |
+| **GFX-18** | done | GAP-21 | 管理画面の添付画像表示 | `ConversationDetail` に `AttachmentThumbnails` を統合。`/api/admin/attachments/signed-url` エンドポイントを追加（Service Role で署名）。 |
+
 ---
 
 必要な情報や優先度が変わった場合は、このファイルで随時アップデートしてください。

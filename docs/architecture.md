@@ -17,24 +17,35 @@
 
 ### 生徒
 
-* Google ログイン（Supabase Auth）
-* テキスト/画像の同時送信、AI 応答（Markdown/LaTeX）
-* 会話履歴一覧/詳細
+* Google ログイン（Supabase Auth）→ ロール別ルーティング（生徒→`/chat`、スタッフ→`/admin`）
+* テキスト/画像の同時送信（`<textarea>` auto-resize、Shift+Enter で改行）、AI 応答（Markdown/LaTeX）
+* ストリーム中断/再送信ボタン、オフラインバナー表示
+* 会話履歴一覧/詳細（モバイルはハンバーガーメニューでドロワー表示）
+* 会話削除（サイドバーのゴミ箱ボタン + 確認ダイアログ）
 * 月次学習レポート閲覧（`/reports`）
-* 入力チェック（画像サイズ/形式）、送信失敗の再試行
+* 利用状況表示（ヘッダーに「残り N/100」表示、閾値で色分け）
+* 入力チェック（画像サイズ/形式、メッセージ文字数 2000 文字以内）、送信失敗の再試行
+* パスワードリセット（`/reset-password`）
+* ログアウト機能（全ページヘッダーに配置）
 
 ### スタッフ
 
-* Google ログイン（管理者ロール）
-* 会話検索（期間/ユーザー）
-* 会話詳細閲覧
+* Google ログイン（管理者ロール）→ `/admin` ダッシュボード（4機能へのカードリンク）
+* 会話検索（期間/ユーザー）— N+1 クエリ最適化済み（SQL COUNT + GROUP BY）
+* 会話詳細閲覧（添付画像のサムネイル表示対応）
 * 月次レポート閲覧・手動生成・再生成・CSV ダウンロード
 * スタッフ権限付与（UI から）
+* ログアウト機能（全管理画面ヘッダーに配置）
+* React ConfirmDialog による操作確認（`window.confirm/alert` を廃止）
 
 ### 共通/自動処理
 
-* 画像アップロード（**短寿命の署名URL**）
-* **DBベース**のクォータ/レート制限
+* **Next.js Middleware** による認証ガード（未認証→`/login` リダイレクト、`/chat-test` は本番遮断）
+* **Error Boundary**（`app/error.tsx`, `app/chat/error.tsx`）による graceful エラー回復
+* **loading.tsx / not-found.tsx** によるローディング表示とカスタム 404
+* **セッション有効期限管理**（`onAuthStateChange` + `SessionExpiredModal`）
+* 画像アップロード（**短寿命の署名URL** + 期限切れ時の自動再署名）
+* **DBベース**のクォータ/レート制限 + **サーバーサイドバリデーション**（添付枚数 3 枚、メッセージ 2000 文字）
 * LLM 再試行/フォールバック
 * **毎日 23:55 実行 → 月末判定** → LLM が生徒個別の学習レポートを生成・保存 → 通知メール送信
 * 重大エラー通知（Resend メール、Sentry 任意）
@@ -88,15 +99,22 @@
 
 ```
 [Browser]
-  ├─ /chat  : 生徒UI（送信/履歴閲覧）
-  ├─ /reports: 生徒用学習レポート閲覧
-  ├─ /admin : スタッフUI（検索/閲覧/レポート管理/権限付与）
+  ├─ middleware.ts : Supabase セッション cookie 検証（@supabase/ssr）
+  │                 未認証→/login リダイレクト、/chat-test 本番遮断
+  ├─ /login       : ログイン → /api/sync-user → ロール別ルーティング
+  ├─ /reset-password: パスワードリセット（PASSWORD_RECOVERY イベント）
+  ├─ /chat        : 生徒UI（送信/履歴閲覧/モバイルドロワー/利用状況表示）
+  ├─ /reports     : 生徒用学習レポート閲覧
+  ├─ /admin       : スタッフ ダッシュボード（4機能へのカードリンク）
   └─ fetch  : /api/*
-         ├─ chat            : LLM呼び出し＋保存（Service RoleでDB書込）
+         ├─ chat            : LLM呼び出し＋保存（Service RoleでDB書込、添付枚数/文字数検証）
+         ├─ conversations/[id] DELETE : 会話削除（CASCADE: messages/attachments）
          ├─ attachments/sign: 署名URL発行（Storage直PUT）
+         ├─ usage           : 当月利用状況取得（usage_counters 集計）
          ├─ reports/monthly : LLM分析→レポート生成・保存（Cron/手動）、一覧取得、CSVダウンロード
          ├─ sync-user       : 初回ログイン同期（role=student固定）
-         └─ admin/grant     : 管理者ロール付与（requireStaff() + GRANT_ALLOWED_EMAILS）
+         ├─ admin/grant     : 管理者ロール付与（requireStaff() + GRANT_ALLOWED_EMAILS）
+         └─ admin/attachments/signed-url : 管理者用画像署名URL（Service Role）
 
 [Next.js on Vercel (Node runtime)] ── uses ── [Supabase]
                                           ├─ Auth (Google)
@@ -114,23 +132,39 @@
 
 ```
 .
+├─ middleware.ts                       # 認証ガード（@supabase/ssr）+ /chat-test 本番遮断
 ├─ app/
-│  ├─ chat/page.tsx
-│  ├─ reports/page.tsx               # 生徒用学習レポート閲覧
+│  ├─ error.tsx                       # ルートレベル Error Boundary
+│  ├─ loading.tsx                     # グローバルローディング UI
+│  ├─ not-found.tsx                   # カスタム 404 ページ
+│  ├─ login/page.tsx                  # ログイン + パスワードリセット導線
+│  ├─ reset-password/page.tsx         # パスワード再設定
+│  ├─ chat/
+│  │  ├─ page.tsx                     # チャット画面（モバイルドロワー対応）
+│  │  ├─ error.tsx                    # チャット専用 Error Boundary
+│  │  └─ loading.tsx                  # チャットスケルトン UI
+│  ├─ reports/page.tsx                # 生徒用学習レポート閲覧
 │  ├─ admin/
-│  │  ├─ page.tsx                 # 会話検索/閲覧
-│  │  ├─ allowlist/page.tsx       # 許可メール管理
-│  │  ├─ reports/page.tsx         # スタッフ用レポート管理
-│  │  └─ grant/page.tsx           # スタッフ権限付与
+│  │  ├─ page.tsx                     # ダッシュボード（4機能カードリンク）
+│  │  ├─ error.tsx                    # 管理画面 Error Boundary（任意）
+│  │  ├─ allowlist/page.tsx           # 許可メール管理
+│  │  ├─ conversations/page.tsx       # 会話検索・閲覧
+│  │  ├─ reports/page.tsx             # スタッフ用レポート管理
+│  │  └─ grant/page.tsx               # スタッフ権限付与
 │  ├─ api/
-│  │  ├─ chat/route.ts
+│  │  ├─ chat/route.ts                # 添付枚数/文字数サーバー検証付き
+│  │  ├─ conversations/[id]/route.ts  # GET + DELETE（CASCADE）
 │  │  ├─ attachments/sign/route.ts
+│  │  ├─ usage/route.ts              # 当月利用状況（GET）
 │  │  ├─ reports/monthly/route.ts
 │  │  ├─ reports/monthly/csv/route.ts
 │  │  ├─ sync-user/route.ts
 │  │  └─ admin/
-│  │      ├─ grant/route.ts       # 管理者ロール付与（requireStaff() + GRANT_ALLOWED_EMAILS）
-│  │      └─ allowlist/route.ts   # 許可メール CRUD（staff UI 用）
+│  │      ├─ grant/route.ts
+│  │      ├─ allowlist/route.ts
+│  │      ├─ conversations/route.ts   # 会話一覧検索（N+1最適化済み）
+│  │      ├─ conversations/[id]/route.ts
+│  │      └─ attachments/signed-url/route.ts  # 管理者用画像署名
 │  ├─ layout.tsx  # KaTeX CSSのimportをここで実施
 │  └─ page.tsx / globals.css
 ├─ src/
@@ -145,7 +179,9 @@
 │  ├─ shared/
 │  │  ├─ lib/            (supabaseClient.ts, supabaseAdmin.ts, llm.ts, mailer.ts,
 │  │  │                   errors.ts, errorPresenter.ts, apiHandler.ts, notifier.ts)
-│  │  ├─ components/ hooks/ types/ utils/
+│  │  ├─ components/     (ConfirmDialog.tsx, SessionExpiredModal.tsx, OfflineBanner.tsx)
+│  │  ├─ hooks/          (useLogout.ts, useNetworkStatus.ts)
+│  │  ├─ types/ utils/
 │  └─ styles/
 ├─ supabase/            (Supabase 用マイグレーション SQL。SQL Editor/CLI どちらでも利用可能)
 ├─ public/                (katex assets 等)
@@ -271,8 +307,11 @@ const customSchema = {
 
 ### アクセス制御
 
+* **Middleware 認証ガード**（`middleware.ts`）: `/chat`, `/reports`, `/admin/*` への未認証アクセスを `/login` にリダイレクト
+* **AllowlistGuard**（クライアント側）: 二重チェックとして維持。`status !== 'active'` の場合はホームにリダイレクト
 * RLS により `auth.jwt() -> 'app_metadata' ->> 'role' = 'staff'` のみアクセス可能
 * `/app/admin/page.tsx` で `requireStaff()` ガードを適用
+* **ログアウト**: 全ページヘッダーに配置。`supabase.auth.signOut()` → `/login` にリダイレクト
 
 ---
 

@@ -332,6 +332,32 @@ pnpm test:e2e
 
 ---
 
+## GFX 追加テスト対象
+
+Sprint 1〜4（GFX-01〜18）で追加された機能のテスト対象:
+
+| 機能 | テスト対象 | テスト種別 |
+|------|----------|-----------|
+| Middleware 認証ガード (GFX-02) | 未認証時の `/chat`、`/admin/*` リダイレクト。`/chat-test` の本番ブロック | 手動 + 統合テスト |
+| ログアウト (GFX-03) | `signOut()` 後のセッションクリア・リダイレクト | 手動 |
+| Error Boundary (GFX-04) | `app/error.tsx` のフォールバック表示。意図的な例外での復旧動作 | 手動 |
+| セッション管理 (GFX-05) | `SIGNED_OUT` イベントで `SessionExpiredModal` が表示される | 手動 |
+| オフラインハンドリング (GFX-06) | `OfflineBanner` の表示/非表示。ネットワーク復帰後の自動消去 | 手動 |
+| モバイルサイドバー (GFX-07) | ハンバーガーメニューでドロワー開閉。会話選択後の自動クローズ | 手動 |
+| loading/not-found (GFX-08) | ページ遷移時のスピナー。存在しない URL でカスタム 404 | 手動 |
+| ConfirmDialog (GFX-09) | `window.confirm` 置き換え。キャンセル/確定の動作 | 手動 |
+| 会話削除 (GFX-10) | `DELETE /api/conversations/[id]` の 204/401/403/404 応答。CASCADE DELETE | API テスト |
+| 管理ダッシュボード (GFX-11) | `/admin` の 4 カードリンク表示。スタッフ認証ガード | 手動 |
+| パスワードリセット (GFX-12) | メール送信 → `PASSWORD_RECOVERY` イベント → パスワード更新 | 手動 |
+| 署名 URL リフレッシュ (GFX-13) | `onError` での自動再署名（1 回リトライ） | 手動 |
+| N+1 最適化 (GFX-14) | `COUNT() GROUP BY` + `OFFSET/LIMIT` のクエリ正常動作 | API テスト |
+| サーバーサイド検証 (GFX-15) | 添付 4 枚で 400、2001 文字で 400 | API テスト |
+| 利用状況表示 (GFX-16) | `GET /api/usage` の正常レスポンス。ヘッダー表示 | API テスト + 手動 |
+| textarea (GFX-17) | 自動リサイズ。Shift+Enter 改行。Enter 送信 | 手動 |
+| 管理添付表示 (GFX-18) | `ConversationDetail` 内の `AttachmentThumbnails` 表示 | 手動 |
+
+---
+
 ## 関連ドキュメント
 
 * [RLS ポリシー](./rls.md)

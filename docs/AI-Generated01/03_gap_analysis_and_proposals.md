@@ -50,37 +50,37 @@ Marubo AI のソースコード全体を分析し、現在「実装されてい�
 
 ## 優先度別サマリー
 
-### 高優先度（即座に対応すべき）
+### 高優先度 — ✅ Sprint 1-2 で解決済み
 
-| ID | 概要 |
-|----|------|
-| GAP-01 | ログイン後のロール別ルーティング |
-| GAP-02 | Next.js Middleware による認証ガード |
-| GAP-03 | ログアウト機能の実装 |
-| GAP-04 | セッション有効期限の適切な管理 |
-| GAP-05 | ネットワークエラー/オフライン対応 |
-| GAP-11 | /chat-test ページの本番非公開化 |
-| GAP-14 | React Error Boundary の追加 |
-| GAP-16 | モバイルでの会話サイドバー対応 |
+| ID | 概要 | 対応 GFX |
+|----|------|---------|
+| GAP-01 | ログイン後のロール別ルーティング | GFX-01 |
+| GAP-02 | Next.js Middleware による認証ガード | GFX-02 |
+| GAP-03 | ログアウト機能の実装 | GFX-03 |
+| GAP-04 | セッション有効期限の適切な管理 | GFX-05 |
+| GAP-05 | ネットワークエラー/オフライン対応 | GFX-06 |
+| GAP-11 | /chat-test ページの本番非公開化 | GFX-02（Middleware で統合対応） |
+| GAP-14 | React Error Boundary の追加 | GFX-04 |
+| GAP-16 | モバイルでの会話サイドバー対応 | GFX-07 |
 
-### 中優先度（次スプリントで対応）
+### 中優先度 — ✅ Sprint 3-4 で解決済み
 
-| ID | 概要 |
-|----|------|
-| GAP-06 | ネイティブ confirm/alert → React モーダル化 |
-| GAP-07 | 会話削除機能 |
-| GAP-08 | 署名URL期限切れ時の自動再取得 |
-| GAP-10 | /admin ダッシュボード化 |
-| GAP-13 | 会話検索のN+1クエリ最適化 |
-| GAP-15 | パスワードリセット機能 |
-| GAP-17 | 添付枚数のサーバーサイドバリデーション |
-| GAP-18 | 生徒向け利用状況表示 |
-| GAP-21 | 管理画面での添付画像表示 |
-| GAP-22 | チャット入力の textarea 化 |
-| GAP-25 | loading.tsx / not-found.tsx の追加 |
-| GAP-26 | メッセージ文字数制限 |
+| ID | 概要 | 対応 GFX |
+|----|------|---------|
+| GAP-06 | ネイティブ confirm/alert → React モーダル化 | GFX-09 |
+| GAP-07 | 会話削除機能 | GFX-10 |
+| GAP-08 | 署名URL期限切れ時の自動再取得 | GFX-13 |
+| GAP-10 | /admin ダッシュボード化 | GFX-11 |
+| GAP-13 | 会話検索のN+1クエリ最適化 | GFX-14 |
+| GAP-15 | パスワードリセット機能 | GFX-12 |
+| GAP-17 | 添付枚数のサーバーサイドバリデーション | GFX-15 |
+| GAP-18 | 生徒向け利用状況表示 | GFX-16 |
+| GAP-21 | 管理画面での添付画像表示 | GFX-18 |
+| GAP-22 | チャット入力の textarea 化 | GFX-17 |
+| GAP-25 | loading.tsx / not-found.tsx の追加 | GFX-08 |
+| GAP-26 | メッセージ文字数制限 | GFX-15（サーバーサイド検証に統合） |
 
-### 低優先度（バックログとして管理）
+### 低優先度（バックログとして管理 — 未対応）
 
 | ID | 概要 |
 |----|------|
@@ -182,22 +182,22 @@ Phase 1: Sentry (エラー監視) + Vercel Analytics (パフォーマンス)
 Phase 2: OpenTelemetry (分散トレーシング) + Grafana (ダッシュボード)
 ```
 
-### 4.4 実装ロードマップ案
+### 4.4 実装ロードマップ（実績）
 
 ```
-Sprint 1 (1-2週間): GAP-01, GAP-02, GAP-03, GAP-11, GAP-14
+✅ Sprint 1: GFX-01〜05 (GAP-01, GAP-02, GAP-03, GAP-11, GAP-14)
   → 認証フローの完成 + セキュリティ基盤
 
-Sprint 2 (1-2週間): GAP-04, GAP-05, GAP-16, GAP-25
+✅ Sprint 2: GFX-06〜08 (GAP-04, GAP-05, GAP-16, GAP-25)
   → UXの安定化 + モバイル対応
 
-Sprint 3 (1-2週間): GAP-06, GAP-07, GAP-10, GAP-15
+✅ Sprint 3: GFX-09〜12 (GAP-06, GAP-07, GAP-10, GAP-15)
   → プロダクト品質の向上
 
-Sprint 4 (1-2週間): GAP-08, GAP-13, GAP-17, GAP-18, GAP-26
+✅ Sprint 4: GFX-13〜18 (GAP-08, GAP-13, GAP-17, GAP-18, GAP-21, GAP-22, GAP-26)
   → パフォーマンス + セキュリティの堅牢化
 
-Backlog: GAP-09, GAP-12, GAP-19, GAP-20, GAP-21, GAP-22, GAP-23, GAP-24, GAP-27
+Backlog（未対応）: GAP-09, GAP-12, GAP-19, GAP-20, GAP-23, GAP-24, GAP-27
   → 優先度に応じて順次対応
 ```
 

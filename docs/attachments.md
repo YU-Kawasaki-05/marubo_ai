@@ -137,7 +137,9 @@ CREATE TABLE IF NOT EXISTS attachments (
 | 非対応フォーマット | 400 | 「対応している画像形式は JPEG / PNG / WebP です」 |
 | ファイルサイズ超過 | 400 | 「画像は 1 枚あたり 5MB 以下にしてください」 |
 | 添付枚数超過 | 400 | 「1 回の送信で添付できる画像は 3 枚までです」 |
-| 署名 URL 期限切れ | 403 | 自動で 1 回だけ再取得を試みる。失敗時は「もう一度お試しください」 |
+| 添付枚数超過（サーバー） | 400 | `TOO_MANY_ATTACHMENTS` — サーバーサイドでも `attachments.length > 3` を検証（GFX-15） |
+| メッセージ文字数超過（サーバー） | 400 | `MESSAGE_TOO_LONG` — 最新メッセージが 2000 文字超の場合（GFX-15） |
+| 署名 URL 期限切れ | 403 | `AttachmentThumbnails` の `onError` ハンドラで自動検知し、1 回だけ再署名を試行（GFX-13）。失敗時は「もう一度お試しください」 |
 | Storage アップロード失敗 | 500 | 「画像のアップロードに失敗しました。もう一度お試しください」 |
 
 ---
@@ -161,9 +163,19 @@ CREATE TABLE IF NOT EXISTS attachments (
 
 ---
 
+### スタッフ用添付画像表示
+
+スタッフが `/admin/conversations` で会話詳細を閲覧する際、添付画像のサムネイルも表示される（GFX-18）。
+
+* `ConversationDetail` コンポーネントに `AttachmentThumbnails` を統合
+* スタッフ用の署名 URL は `POST /api/admin/attachments/signed-url`（Service Role）で生成
+* Storage の RLS は `app_metadata.role = 'staff'` で全パス閲覧を許可
+
+---
+
 ## 関連ドキュメント
 
 - [データベース設計](./database.md)（`attachments` テーブル、Storage ポリシー）
 - [セキュリティポリシー](./security.md)（MIME チェック、署名 URL）
-- [API 仕様](./api.md)（`/api/attachments/sign`）
+- [API 仕様](./api.md)（`/api/attachments/sign`、`/api/admin/attachments/signed-url`）
 - [TODO / Roadmap](./todo.md)（BE-08 〜 BE-11, FE-05 〜 FE-06）

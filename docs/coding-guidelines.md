@@ -55,8 +55,8 @@ src/
 │  └─ reports/      (monthlySql.ts, toCsv.ts, jobs/runMonthly.ts)
 ├─ shared/
 │  ├─ lib/          (supabaseClient.ts, llm.ts, errors.ts, ...)
-│  ├─ components/   (共通 UI コンポーネント)
-│  ├─ hooks/        (共通カスタムフック)
+│  ├─ components/   (共通 UI: ConfirmDialog, SessionExpiredModal, OfflineBanner)
+│  ├─ hooks/        (共通フック: useLogout, useNetworkStatus)
 │  ├─ types/        (共通型定義)
 │  └─ utils/        (汎用ユーティリティ)
 ```
@@ -183,6 +183,7 @@ module.exports = {
   "dependencies": {
     "next": "^14.0.0",
     "@supabase/supabase-js": "^2.0.0",
+    "@supabase/ssr": "^0.5.0",
     "react": "^18.0.0",
     "react-markdown": "^9.0.0",
     "remark-gfm": "^4.0.0",
