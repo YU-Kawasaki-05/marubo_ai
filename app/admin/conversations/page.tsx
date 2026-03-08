@@ -17,6 +17,7 @@ import {
   useConversationsQuery,
   type ConversationsQueryParams,
 } from '../../../src/features/admin/conversations/hooks/useConversationsQuery'
+import { LogoutButton } from '../../../src/shared/components/LogoutButton'
 import { getSupabaseBrowserClient } from '../../../src/shared/lib/supabaseClient'
 
 function formatDateTime(iso: string): string {
@@ -104,9 +105,12 @@ export default function ConversationsPage() {
           <h1 className="text-2xl font-bold text-slate-900">会話検索</h1>
           <p className="text-sm text-slate-600">全生徒の会話を検索・閲覧します。</p>
         </div>
-        <Link href="/" className="text-sm text-indigo-600 hover:underline">
-          戻る
-        </Link>
+        <div className="flex items-center gap-4">
+          <LogoutButton />
+          <Link href="/" className="text-sm text-indigo-600 hover:underline">
+            戻る
+          </Link>
+        </div>
       </header>
 
       {/* 検索フィルタ */}
