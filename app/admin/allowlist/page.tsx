@@ -6,14 +6,34 @@ import { useEffect, useMemo, useState } from 'react'
 import { CsvImportForm } from '../../../src/features/admin/allowlist/components/CsvImportForm'
 import { useAllowlistMutations } from '../../../src/features/admin/allowlist/hooks/useAllowlistMutations'
 import { useAllowlistQuery } from '../../../src/features/admin/allowlist/hooks/useAllowlistQuery'
+import { ConfirmDialog } from '../../../src/shared/components/ConfirmDialog'
 import { LogoutButton } from '../../../src/shared/components/LogoutButton'
 import { getSupabaseBrowserClient } from '../../../src/shared/lib/supabaseClient'
+
+type DialogState = {
+  open: boolean
+  title: string
+  message: string
+  variant?: 'default' | 'destructive'
+  confirmLabel?: string
+  cancelLabel?: string | null
+  onConfirm: () => void
+}
 
 type AllowedEmailStatus = 'active' | 'pending' | 'revoked'
 
 export default function AllowlistPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<AllowedEmailStatus | 'all'>('all')
+  const [dialog, setDialog] = useState<DialogState>({
+    open: false, title: '', message: '', onConfirm: () => {},
+  })
+
+  const closeDialog = () => setDialog((prev) => ({ ...prev, open: false }))
+
+  const showAlert = (title: string, message: string) => {
+    setDialog({ open: true, title, message, cancelLabel: null, onConfirm: closeDialog })
+  }
 
   // 認証トークンの管理
   const [token, setToken] = useState<string | null>(null)
@@ -130,15 +150,23 @@ export default function AllowlistPage() {
               <div className="flex items-center gap-3">
                 <StatusDropdown
                   current={item.status as AllowedEmailStatus}
-                  onChange={async (nextStatus) => {
-                    try {
-                      await updateAllowedEmail(item.email, { status: nextStatus })
-                      // 更新成功したらリロードで反映（初心者向けの実装）
-                      window.location.reload()
-                    } catch (err) {
-                      const message = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
-                      alert(`更新エラー: ${message}`)
-                    }
+                  onRequestChange={(next) => {
+                    setDialog({
+                      open: true,
+                      title: 'ステータス変更の確認',
+                      message: `${item.email} のステータスを ${item.status} から ${next} に変更しますか？`,
+                      confirmLabel: '変更する',
+                      onConfirm: async () => {
+                        closeDialog()
+                        try {
+                          await updateAllowedEmail(item.email, { status: next })
+                          window.location.reload()
+                        } catch (err) {
+                          const msg = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
+                          showAlert('更新エラー', msg)
+                        }
+                      },
+                    })
                   }}
                 />
               </div>
@@ -158,18 +186,27 @@ export default function AllowlistPage() {
           window.location.reload()
         }}
       />
+
+      <ConfirmDialog
+        open={dialog.open}
+        title={dialog.title}
+        message={dialog.message}
+        confirmLabel={dialog.confirmLabel}
+        cancelLabel={dialog.cancelLabel}
+        variant={dialog.variant}
+        onConfirm={dialog.onConfirm}
+        onCancel={closeDialog}
+      />
     </main>
   )
 }
 
 type StatusDropdownProps = {
   current: AllowedEmailStatus
-  onChange: (status: AllowedEmailStatus) => Promise<void>
+  onRequestChange: (status: AllowedEmailStatus) => void
 }
 
-function StatusDropdown({ current, onChange }: StatusDropdownProps) {
-  const [updating, setUpdating] = useState(false)
-
+function StatusDropdown({ current, onRequestChange }: StatusDropdownProps) {
   return (
     <div className="relative">
       <select
@@ -182,23 +219,12 @@ function StatusDropdown({ current, onChange }: StatusDropdownProps) {
             : 'bg-red-50 border-red-200 text-red-700'
         }`}
         value={current}
-        disabled={updating}
-        onChange={async (e) => {
+        onChange={(e) => {
           const next = e.target.value as AllowedEmailStatus
           if (next === current) return
-          
-          if (!confirm(`${current} から ${next} に変更しますか？`)) {
-            // 値を戻す
-            e.target.value = current 
-            return
-          }
-
-          setUpdating(true)
-          try {
-            await onChange(next)
-          } finally {
-            setUpdating(false)
-          }
+          // 値を戻す（確認ダイアログで承認後にリロードされる）
+          e.target.value = current
+          onRequestChange(next)
         }}
       >
         <option value="active">active</option>

@@ -17,8 +17,19 @@ import {
   type ReportsQueryParams,
 } from '../../../src/features/admin/reports/hooks/useReportsQuery'
 import { MonthSelector } from '../../../src/features/reports/components/MonthSelector'
+import { ConfirmDialog } from '../../../src/shared/components/ConfirmDialog'
 import { LogoutButton } from '../../../src/shared/components/LogoutButton'
 import { getSupabaseBrowserClient } from '../../../src/shared/lib/supabaseClient'
+
+type DialogState = {
+  open: boolean
+  title: string
+  message: string
+  variant?: 'default' | 'destructive'
+  confirmLabel?: string
+  cancelLabel?: string | null
+  onConfirm: () => void
+}
 
 function getCurrentMonth(): string {
   const now = new Date()
@@ -63,6 +74,15 @@ export default function AdminReportsPage() {
   const [selectedMonth, setSelectedMonth] = useState(getCurrentMonth())
   const [page, setPage] = useState(1)
   const [generating, setGenerating] = useState(false)
+  const [dialog, setDialog] = useState<DialogState>({
+    open: false, title: '', message: '', onConfirm: () => {},
+  })
+
+  const closeDialog = () => setDialog((prev) => ({ ...prev, open: false }))
+
+  const showAlert = (title: string, message: string) => {
+    setDialog({ open: true, title, message, cancelLabel: null, onConfirm: closeDialog })
+  }
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient()
@@ -89,63 +109,84 @@ export default function AdminReportsPage() {
     setPage(1)
   }
 
-  const handleDryRun = async () => {
-    if (!window.confirm(`${selectedMonth} のレポートを Dry Run（プレビュー）しますか？`)) return
-
-    setGenerating(true)
-    try {
-      const result = await generateReports(selectedMonth, true)
-      alert(
-        `Dry Run 完了\n対象ユーザー数: ${result?.targetCount ?? '-'}\nスキップ: ${result?.skippedCount ?? '-'}`,
-      )
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
-      alert(`エラー: ${message}`)
-    } finally {
-      setGenerating(false)
-    }
+  const handleDryRun = () => {
+    setDialog({
+      open: true,
+      title: 'Dry Run の確認',
+      message: `${selectedMonth} のレポートを Dry Run（プレビュー）しますか？`,
+      confirmLabel: '実行する',
+      onConfirm: async () => {
+        closeDialog()
+        setGenerating(true)
+        try {
+          const result = await generateReports(selectedMonth, true)
+          showAlert(
+            'Dry Run 完了',
+            `対象ユーザー数: ${result?.targetCount ?? '-'}\nスキップ: ${result?.skippedCount ?? '-'}`,
+          )
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
+          showAlert('エラー', msg)
+        } finally {
+          setGenerating(false)
+        }
+      },
+    })
   }
 
-  const handleGenerate = async () => {
-    if (!window.confirm(`${selectedMonth} のレポートを一括生成しますか？\n（LLM 分析を含むため数分かかる場合があります）`)) return
-
-    setGenerating(true)
-    try {
-      const result = await generateReports(selectedMonth, false)
-      alert(
-        `生成完了\n成功: ${result?.successCount ?? '-'}\n失敗: ${result?.failedCount ?? '-'}\nスキップ: ${result?.skippedCount ?? '-'}`,
-      )
-      window.location.reload()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
-      alert(`エラー: ${message}`)
-    } finally {
-      setGenerating(false)
-    }
+  const handleGenerate = () => {
+    setDialog({
+      open: true,
+      title: '一括生成の確認',
+      message: `${selectedMonth} のレポートを一括生成しますか？\n（LLM 分析を含むため数分かかる場合があります）`,
+      confirmLabel: '生成する',
+      onConfirm: async () => {
+        closeDialog()
+        setGenerating(true)
+        try {
+          const result = await generateReports(selectedMonth, false)
+          showAlert(
+            '生成完了',
+            `成功: ${result?.successCount ?? '-'}\n失敗: ${result?.failedCount ?? '-'}\nスキップ: ${result?.skippedCount ?? '-'}`,
+          )
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
+          showAlert('エラー', msg)
+        } finally {
+          setGenerating(false)
+        }
+      },
+    })
   }
 
-  const handleRegenerate = async (userId: string, email: string) => {
-    if (!window.confirm(`${email} のレポートを再生成しますか？`)) return
-
-    setGenerating(true)
-    try {
-      await regenerateReport(selectedMonth, userId)
-      alert('再生成が完了しました。')
-      window.location.reload()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
-      alert(`エラー: ${message}`)
-    } finally {
-      setGenerating(false)
-    }
+  const handleRegenerate = (userId: string, email: string) => {
+    setDialog({
+      open: true,
+      title: '再生成の確認',
+      message: `${email} のレポートを再生成しますか？`,
+      confirmLabel: '再生成する',
+      onConfirm: async () => {
+        closeDialog()
+        setGenerating(true)
+        try {
+          await regenerateReport(selectedMonth, userId)
+          showAlert('完了', '再生成が完了しました。')
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
+          showAlert('エラー', msg)
+        } finally {
+          setGenerating(false)
+        }
+      },
+    })
   }
 
   const handleCsvDownload = async () => {
     try {
       await downloadCsv(selectedMonth)
     } catch (err) {
-      const message = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
-      alert(`エラー: ${message}`)
+      const msg = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
+      showAlert('エラー', msg)
     }
   }
 
@@ -345,6 +386,16 @@ export default function AdminReportsPage() {
           </div>
         )}
       </section>
+      <ConfirmDialog
+        open={dialog.open}
+        title={dialog.title}
+        message={dialog.message}
+        confirmLabel={dialog.confirmLabel}
+        cancelLabel={dialog.cancelLabel}
+        variant={dialog.variant}
+        onConfirm={dialog.onConfirm}
+        onCancel={closeDialog}
+      />
     </main>
   )
 }
