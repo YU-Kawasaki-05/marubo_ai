@@ -13,12 +13,28 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { useGrantMutation } from '../../../src/features/admin/grant/hooks/useGrantMutation'
 import { useGrantQuery } from '../../../src/features/admin/grant/hooks/useGrantQuery'
+import { ConfirmDialog } from '../../../src/shared/components/ConfirmDialog'
 import { LogoutButton } from '../../../src/shared/components/LogoutButton'
 import { getSupabaseBrowserClient } from '../../../src/shared/lib/supabaseClient'
+
+type DialogState = {
+  open: boolean
+  title: string
+  message: string
+  variant?: 'default' | 'destructive'
+  confirmLabel?: string
+  cancelLabel?: string | null
+  onConfirm: () => void
+}
 
 export default function GrantPage() {
   const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [dialog, setDialog] = useState<DialogState>({
+    open: false, title: '', message: '', onConfirm: () => {},
+  })
+
+  const closeDialog = () => setDialog((prev) => ({ ...prev, open: false }))
 
   const [token, setToken] = useState<string | null>(null)
   const [isCheckingSession, setIsCheckingSession] = useState(true)
@@ -68,37 +84,54 @@ export default function GrantPage() {
     )
   }
 
-  const handleGrant = async () => {
+  const showAlert = (title: string, message: string) => {
+    setDialog({ open: true, title, message, cancelLabel: null, onConfirm: closeDialog })
+  }
+
+  const handleGrant = () => {
     const trimmed = email.trim()
     if (!trimmed) return
 
-    if (!window.confirm(`${trimmed} にスタッフ権限を付与しますか？`)) return
-
-    setSubmitting(true)
-    try {
-      await grantRole(trimmed)
-      alert('付与しました。対象ユーザーは再ログインが必要です。')
-      setEmail('')
-      window.location.reload()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
-      alert(`エラー: ${message}`)
-    } finally {
-      setSubmitting(false)
-    }
+    setDialog({
+      open: true,
+      title: '権限付与の確認',
+      message: `${trimmed} にスタッフ権限を付与しますか？`,
+      confirmLabel: '付与する',
+      onConfirm: async () => {
+        setSubmitting(true)
+        closeDialog()
+        try {
+          await grantRole(trimmed)
+          setEmail('')
+          showAlert('完了', '付与しました。対象ユーザーは再ログインが必要です。')
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
+          showAlert('エラー', msg)
+        } finally {
+          setSubmitting(false)
+        }
+      },
+    })
   }
 
-  const handleRevoke = async (targetEmail: string) => {
-    if (!window.confirm(`${targetEmail} のスタッフ権限を解除しますか？`)) return
-
-    try {
-      await revokeRole(targetEmail)
-      alert('権限を解除しました。対象ユーザーは再ログインが必要です。')
-      window.location.reload()
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
-      alert(`エラー: ${message}`)
-    }
+  const handleRevoke = (targetEmail: string) => {
+    setDialog({
+      open: true,
+      title: '権限解除の確認',
+      message: `${targetEmail} のスタッフ権限を解除しますか？`,
+      confirmLabel: '解除する',
+      variant: 'destructive',
+      onConfirm: async () => {
+        closeDialog()
+        try {
+          await revokeRole(targetEmail)
+          showAlert('完了', '権限を解除しました。対象ユーザーは再ログインが必要です。')
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
+          showAlert('エラー', msg)
+        }
+      },
+    })
   }
 
   const formatDate = (iso: string) => {
@@ -264,6 +297,16 @@ export default function GrantPage() {
           </div>
         )}
       </section>
+      <ConfirmDialog
+        open={dialog.open}
+        title={dialog.title}
+        message={dialog.message}
+        confirmLabel={dialog.confirmLabel}
+        cancelLabel={dialog.cancelLabel}
+        variant={dialog.variant}
+        onConfirm={dialog.onConfirm}
+        onCancel={closeDialog}
+      />
     </main>
   )
 }
