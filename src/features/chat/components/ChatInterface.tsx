@@ -8,7 +8,7 @@
 
 import { useChat } from '@ai-sdk/react'
 import { type UIMessage } from 'ai'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { useImageAttachments } from '../hooks/useImageAttachments'
 import { useNetworkStatus } from '../hooks/useNetworkStatus'
@@ -104,9 +104,23 @@ function ChatSession({
   const isLoading = status === 'submitted' || status === 'streaming'
   const isOverLimit = input.length > MAX_MESSAGE_LENGTH
 
-  // 入力ハンドラ
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // textarea ref（自動リサイズ用）
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  // 入力ハンドラ（自動リサイズ付き）
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(e.target.value)
+    const el = e.target
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }
+
+  // Enter で送信、Shift+Enter で改行
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+      e.preventDefault()
+      e.currentTarget.form?.requestSubmit()
+    }
   }
 
   // ドラッグ&ドロップ
@@ -138,6 +152,11 @@ function ChatSession({
     const userMessage = input
     setInput('') // 入力欄をクリア
     setChatError(null) // 前回のエラーをクリア
+
+    // textarea の高さをリセット
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto'
+    }
 
     try {
       // 添付画像がある場合はアップロードしてからメッセージ送信
@@ -308,12 +327,15 @@ function ChatSession({
             </svg>
           </button>
 
-          <input
-            className={`flex-1 p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm ${isOverLimit ? 'border-red-400' : ''}`}
+          <textarea
+            ref={textareaRef}
+            className={`flex-1 p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm max-h-32 overflow-y-auto resize-none ${isOverLimit ? 'border-red-400' : ''}`}
             value={input}
             onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
             placeholder="メッセージを入力..."
             disabled={isLoading || attachments.isUploading}
+            rows={1}
           />
           <button
             type="submit"
