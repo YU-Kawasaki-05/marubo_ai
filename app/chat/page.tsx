@@ -7,6 +7,7 @@ import { useCallback, useState, useEffect } from 'react'
 import { AllowlistGuard } from '@features/allowlist/components/AllowlistGuard'
 import { ChatInterface } from '@features/chat/components/ChatInterface'
 import { ConversationSidebar } from '@features/chat/components/ConversationSidebar'
+import { UsageBadge } from '@features/chat/components/UsageBadge'
 import { LogoutButton } from '@shared/components/LogoutButton'
 import { SessionExpiredModal } from '@shared/components/SessionExpiredModal'
 import { getSupabaseBrowserClient } from '@shared/lib/supabaseClient'
@@ -102,6 +103,7 @@ export default function ChatPage() {
             </span>
           </div>
           <div className="flex items-center gap-4">
+            {token && <UsageBadge token={token} />}
             <Link
               href="/reports"
               className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
