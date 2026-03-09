@@ -17,6 +17,7 @@ import { ImagePreviewBar } from './ImagePreviewBar'
 import { MessageBubble, type MessageAttachment } from './MessageBubble'
 import { OfflineBanner } from './OfflineBanner'
 
+import { MAX_MESSAGE_LENGTH } from '@shared/lib/attachmentValidation'
 import { getSupabaseBrowserClient } from '@shared/lib/supabaseClient'
 
 export interface ChatInterfaceProps {
@@ -101,6 +102,7 @@ function ChatSession({
 
   // status から isLoading を判定 ('submitted' または 'streaming' の間はロード中)
   const isLoading = status === 'submitted' || status === 'streaming'
+  const isOverLimit = input.length > MAX_MESSAGE_LENGTH
 
   // 入力ハンドラ
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -307,7 +309,7 @@ function ChatSession({
           </button>
 
           <input
-            className="flex-1 p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+            className={`flex-1 p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm ${isOverLimit ? 'border-red-400' : ''}`}
             value={input}
             onChange={handleInputChange}
             placeholder="メッセージを入力..."
@@ -316,11 +318,16 @@ function ChatSession({
           <button
             type="submit"
             className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors shadow-sm"
-            disabled={isLoading || attachments.isUploading || (!input?.trim() && attachments.items.length === 0)}
+            disabled={isLoading || attachments.isUploading || isOverLimit || (!input?.trim() && attachments.items.length === 0)}
           >
             {attachments.isUploading ? '送信中...' : '送信'}
           </button>
         </form>
+        {input.length > MAX_MESSAGE_LENGTH * 0.8 && (
+          <div className={`px-4 pb-2 text-xs text-right ${isOverLimit ? 'text-red-500 font-medium' : 'text-gray-400'}`}>
+            {input.length} / {MAX_MESSAGE_LENGTH}
+          </div>
+        )}
       </div>
     </div>
   )
