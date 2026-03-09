@@ -11,9 +11,11 @@ import { type UIMessage } from 'ai'
 import { useCallback, useEffect, useState } from 'react'
 
 import { useImageAttachments } from '../hooks/useImageAttachments'
+import { useNetworkStatus } from '../hooks/useNetworkStatus'
 
 import { ImagePreviewBar } from './ImagePreviewBar'
 import { MessageBubble, type MessageAttachment } from './MessageBubble'
+import { OfflineBanner } from './OfflineBanner'
 
 import { getSupabaseBrowserClient } from '@shared/lib/supabaseClient'
 
@@ -42,6 +44,10 @@ function ChatSession({
 }) {
   // Vercel AI SDK の useChat (v6系) は input 管理を提供しないため、自前で管理する
   const [input, setInput] = useState('')
+  const [chatError, setChatError] = useState<string | null>(null)
+
+  // ネットワーク状態監視
+  const { isOnline } = useNetworkStatus()
 
   // 画像添付フック
   const attachments = useImageAttachments(token)
@@ -50,7 +56,21 @@ function ChatSession({
     // api: '/api/chat', // デフォルト
     onError: (error) => {
       console.error('Chat API Error:', error)
-      alert('エラーが発生しました: ' + error.message)
+
+      // ネットワークエラーの判定
+      if (error instanceof TypeError && error.message.includes('fetch')) {
+        setChatError('ネットワークに接続できません。接続を確認して再送信してください。')
+        return
+      }
+
+      // レート制限エラー（429）
+      if (error.message.includes('429')) {
+        setChatError('送信頻度が制限を超えました。しばらく待ってから再送信してください。')
+        return
+      }
+
+      // その他のエラー
+      setChatError('エラーが発生しました: ' + error.message)
     },
   })
 
@@ -115,6 +135,7 @@ function ChatSession({
 
     const userMessage = input
     setInput('') // 入力欄をクリア
+    setChatError(null) // 前回のエラーをクリア
 
     try {
       // 添付画像がある場合はアップロードしてからメッセージ送信
@@ -177,6 +198,9 @@ function ChatSession({
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
+      {/* オフラインバナー */}
+      <OfflineBanner isOnline={isOnline} />
+
       {/* ドラッグ&ドロップオーバーレイ */}
       {isDragging && (
         <div className="absolute inset-0 z-50 bg-blue-50/80 border-2 border-dashed border-blue-400 rounded-lg flex items-center justify-center pointer-events-none">
@@ -219,6 +243,23 @@ function ChatSession({
           <div className="flex justify-start">
             <div className="bg-gray-100 rounded-lg p-3 text-gray-500 animate-pulse text-sm">
               AIが考え中...
+            </div>
+          </div>
+        )}
+
+        {/* チャットエラーメッセージ（インライン表示） */}
+        {chatError && (
+          <div className="flex justify-center">
+            <div className="flex items-center gap-2 rounded-lg bg-red-50 border border-red-200 px-4 py-2 text-sm text-red-700">
+              <span>{chatError}</span>
+              <button
+                type="button"
+                onClick={() => setChatError(null)}
+                className="ml-2 text-red-400 hover:text-red-600"
+                aria-label="エラーを閉じる"
+              >
+                ✕
+              </button>
             </div>
           </div>
         )}
