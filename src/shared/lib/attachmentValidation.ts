@@ -28,6 +28,9 @@ export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024
 /** 1 メッセージあたりの最大添付枚数 */
 export const MAX_ATTACHMENTS_PER_MESSAGE = 3
 
+/** 1 メッセージあたりの最大文字数 */
+export const MAX_MESSAGE_LENGTH = 2000
+
 /** 署名 URL の有効期限（秒） */
 export const SIGNED_URL_EXPIRES_IN = 60
 

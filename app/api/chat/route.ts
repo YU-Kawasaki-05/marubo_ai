@@ -3,6 +3,7 @@
  * 機能：チャットメッセージを受信し、AIからの応答をストリーミングで返す。
  *   添付画像がある場合は attachments テーブルにも永続化する。
  *   分間レート制限（10 req/min）と月間クォータ（100 問/月）を適用。
+ *   添付枚数（3枚）・メッセージ文字数（2000文字）のサーバーサイドバリデーション。
  * 入力：JSON { messages: UIMessage[], attachments?: { storagePath, mimeType, size }[] }
  * 出力：Streaming Text Response
  * 依存：Vercel AI SDK, OpenAI, Supabase Auth, rateLimit
@@ -13,6 +14,7 @@ import { openai } from '@ai-sdk/openai'
 import { createClient } from '@supabase/supabase-js'
 import { streamText, type UIMessage } from 'ai'
 
+import { MAX_ATTACHMENTS_PER_MESSAGE, MAX_MESSAGE_LENGTH } from '@shared/lib/attachmentValidation'
 import { AppError } from '@shared/lib/errors'
 import { notifyError } from '@shared/lib/notifier'
 import { checkMinuteRate, checkMonthlyQuota, incrementUsage, resolveAppUserId } from '@shared/lib/rateLimit'
@@ -84,6 +86,24 @@ export async function POST(req: Request) {
     }
     const uiMessages = requestBody.messages ?? []
     const attachmentInputs = requestBody.attachments ?? []
+
+    // 添付枚数バリデーション
+    if (attachmentInputs.length > MAX_ATTACHMENTS_PER_MESSAGE) {
+      return new Response(
+        JSON.stringify({ error: `添付画像は${MAX_ATTACHMENTS_PER_MESSAGE}枚までです` }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
+
+    // メッセージ文字数バリデーション
+    const lastUserMsg = [...uiMessages].reverse().find((m) => m.role === 'user')
+    const userTextForValidation = getUIMessageText(lastUserMsg)
+    if (userTextForValidation && userTextForValidation.length > MAX_MESSAGE_LENGTH) {
+      return new Response(
+        JSON.stringify({ error: `メッセージが長すぎます（${MAX_MESSAGE_LENGTH}文字以内）` }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
 
     const messages = await convertSafeMessages(uiMessages)
 
