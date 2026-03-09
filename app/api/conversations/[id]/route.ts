@@ -1,5 +1,10 @@
 /** @file
- * GET /api/conversations/[id] — 会話詳細 + メッセージ一覧 + 添付画像
+ * GET /api/conversations/[id] — 会話詳細 + メッセージ一覧 + 添付画像。
+ * DELETE /api/conversations/[id] — 会話削除（CASCADE で messages/attachments も削除）。
+ * 入力: Authorization ヘッダ（Bearer トークン）、パスパラメータ id。
+ * 出力: GET → 会話詳細 JSON、DELETE → 204 No Content。
+ * 依存: Supabase (RLS + CASCADE FK)。
+ * セキュリティ: user_id === auth.uid() で本人のみ操作可能。
  */
 
 import { createClient } from '@supabase/supabase-js'
@@ -107,6 +112,67 @@ export async function GET(
         })) ?? [],
       },
     })
+  } catch (err) {
+    console.error(err)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+  }
+}
+
+export async function DELETE(
+  req: Request,
+  { params }: { params: { id: string } },
+) {
+  try {
+    const authHeader = req.headers.get('Authorization')
+    if (!authHeader) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const token = authHeader.startsWith('Bearer ')
+      ? authHeader.slice(7)
+      : authHeader
+    const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+      global: {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      },
+    })
+
+    const { data: userData, error: userError } = await supabase.auth.getUser(token)
+    if (userError || !userData.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const conversationId = params.id
+
+    // 会話の所有者チェック
+    const { data: conv, error: convError } = await supabase
+      .from('conversations')
+      .select('id, user_id')
+      .eq('id', conversationId)
+      .single()
+
+    if (convError || !conv) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+
+    if (conv.user_id !== userData.user.id) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
+    // CASCADE DELETE: messages → attachments も自動削除される
+    const { error: deleteError } = await supabase
+      .from('conversations')
+      .delete()
+      .eq('id', conversationId)
+
+    if (deleteError) {
+      console.error('Delete conversation error:', deleteError)
+      return NextResponse.json({ error: 'Failed to delete conversation' }, { status: 500 })
+    }
+
+    return new NextResponse(null, { status: 204 })
   } catch (err) {
     console.error(err)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
