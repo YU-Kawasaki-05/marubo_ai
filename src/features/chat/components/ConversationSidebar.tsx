@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 
+import { ConfirmDialog } from '@shared/components/ConfirmDialog'
 import type { Database } from '@shared/types/database'
 
 type Conversation = Database['public']['Tables']['conversations']['Row']
@@ -22,6 +23,31 @@ export function ConversationSidebar({
   const [error, setError] = useState<string | null>(null)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
   const [hasMore, setHasMore] = useState(false)
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null)
+  const [deleting, setDeleting] = useState(false)
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      const res = await fetch(`/api/conversations/${deleteTarget.id}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      if (!res.ok) {
+        throw new Error('削除に失敗しました')
+      }
+      setConversations((prev) => prev.filter((c) => c.id !== deleteTarget.id))
+      if (selectedId === deleteTarget.id) {
+        onSelect('')
+      }
+    } catch (err) {
+      console.error(err)
+    } finally {
+      setDeleting(false)
+      setDeleteTarget(null)
+    }
+  }, [deleteTarget, token, selectedId, onSelect])
 
   const fetchConversations = async (cursor?: string) => {
     if (!token) return
@@ -117,11 +143,11 @@ export function ConversationSidebar({
 
         <ul className="divide-y divide-gray-100">
           {conversations.map((conv) => (
-            <li key={conv.id}>
+            <li key={conv.id} className="group relative">
               <button
                 type="button"
                 onClick={() => onSelect(conv.id)}
-                className={`w-full p-4 text-left hover:bg-gray-100 transition-colors ${
+                className={`w-full p-4 pr-10 text-left hover:bg-gray-100 transition-colors ${
                   selectedId === conv.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
                 }`}
               >
@@ -131,6 +157,19 @@ export function ConversationSidebar({
                 <div className="mt-1 text-xs text-gray-400">
                   {formatDate(conv.created_at)}
                 </div>
+              </button>
+              <button
+                type="button"
+                aria-label="会話を削除"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setDeleteTarget({ id: conv.id, title: conv.title || '無題の会話' })
+                }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-gray-400 opacity-0 transition-opacity hover:bg-red-50 hover:text-red-600 group-hover:opacity-100"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                </svg>
               </button>
             </li>
           ))}
@@ -158,6 +197,17 @@ export function ConversationSidebar({
           </div>
         )}
       </div>
+
+      <ConfirmDialog
+        open={!!deleteTarget}
+        title="会話の削除"
+        message={`「${deleteTarget?.title ?? ''}」を削除しますか？\nこの操作は取り消せません。`}
+        confirmLabel="削除する"
+        variant="destructive"
+        loading={deleting}
+        onConfirm={handleDeleteConfirm}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </div>
   )
 }
