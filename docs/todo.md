@@ -105,6 +105,7 @@
 | **OPS-06** | review | Vercel Cron 設定 | (実装済み) `vercel.json` を新規作成（`55 14 * * *` = 23:55 JST、UTC 指定）。Vercel Cron は GET リクエストのため、GET ハンドラに Cron 認証+月末判定+生成ロジックを追加。`docs/deployment.md` に dry-run/本実行/再生成の curl コマンド例を明記。`docs/reports/monthly.md` の vercel.json 例・Cron 認証説明を修正（UTC 指定、GET メソッド）。 |
 | **OPS-07** | review | 監視・通知導入 | **Step 1** (review): `src/shared/lib/notifier.ts` を実装（BE-16 と連動）。S1/S2/S3 重大度方針 + 5分デバウンス + Resend メール送信。<br>**Step 2** (todo): `ADMIN_EMAILS` / `MAIL_FROM` を本番環境に設定（手動作業）。 |
 | **OPS-08** | review | 本番環境の秘密情報管理 | (実装済み) `.env.example` を刷新: カテゴリ別コメント付き、全使用中 ENV を網羅（`MONTHLY_QUOTA`, `MOCK_SUPABASE`, `CRON_SECRET` 等を追加）。`docs/deployment.md` の ENV セクションを「必須/任意」テーブル形式に整理、設定場所・デフォルト値・注意事項を明記。 |
+| **OPS-09** | todo | Supabase Redirect URL 設定（パスワードリセット用） | **手動作業**: Supabase Dashboard > Auth > URL Configuration > Redirect URLs に `https://<本番ドメイン>/reset-password` を追加する。ローカル開発では `http://localhost:3000/reset-password` も追加が必要な場合あり。GAP-15（パスワードリセット機能）で必要。 |
 
 ### 6. チャット機能実装 (CHAT)
 
