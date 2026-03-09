@@ -21,6 +21,7 @@
     "@supabase/ssr": "^0.9.0",
     "@supabase/supabase-js": "^2.45.0",
     "ai": "^6.0.33",
+    "encoding-japanese": "^2.2.0",
     "katex": "^0.16.10",
     "next": "^14.2.35",
     "react": "^18.3.1",
@@ -36,6 +37,7 @@
   "devDependencies": {
     "@testing-library/jest-dom": "^6.4.6",
     "@testing-library/react": "^14.2.1",
+    "@types/encoding-japanese": "^2.2.1",
     "@types/katex": "^0.16.7",
     "@types/node": "^20.12.8",
     "@types/react": "^18.3.1",

@@ -1,8 +1,16 @@
+/** @file
+ * CSV 一括登録フォーム。
+ * 機能：CSV ファイルの文字コード自動検出・変換 → プレビュー → インポート実行。
+ * 入力：CSV ファイル（UTF-8 / Shift_JIS / EUC-JP / ISO-2022-JP 等に対応）
+ * 出力：onImport コールバックへ CSV テキストを渡す。
+ * 依存：encoding-japanese（文字コード検出・変換）
+ * セキュリティ：クライアント側のみ。ファイル内容はブラウザ内で処理。
+ */
 'use client'
 
-import type { ChangeEvent } from 'react';
+import Encoding from 'encoding-japanese'
+import type { ChangeEvent } from 'react'
 import { useState } from 'react'
-
 
 type ParseResult = {
   header: string[]
@@ -17,6 +25,7 @@ export function CsvImportForm({ onImport }: { onImport: (csv: string, mode: 'ins
   const [csvText, setCsvText] = useState<string>('')
   const [isImporting, setIsImporting] = useState(false)
   const [isUpsert, setIsUpsert] = useState(false)
+  const [detectedEncoding, setDetectedEncoding] = useState<string>('')
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const selected = e.target.files?.[0]
@@ -24,6 +33,7 @@ export function CsvImportForm({ onImport }: { onImport: (csv: string, mode: 'ins
     setPreview(null) // ファイルが変わったらプレビューをリセット
     setCsvText('')
     setIsUpsert(false) // ファイル変更時にリセット
+    setDetectedEncoding('')
   }
 
   const handlePreview = async () => {
@@ -31,18 +41,23 @@ export function CsvImportForm({ onImport }: { onImport: (csv: string, mode: 'ins
 
     setIsParsing(true)
     try {
-      // 文字コード自動判定: まず UTF-8 でデコードを試み、失敗したら Shift_JIS (Excel標準) で再試行する
+      // encoding-japanese で文字コードを自動検出し、Unicode に変換する
       const buffer = await file.arrayBuffer()
-      let text = ''
-      
-      try {
-        // fatal: true にすると、不正なバイト列（Shift_JISなど）が含まれる場合にエラーになる
-        const decoder = new TextDecoder('utf-8', { fatal: true })
-        text = decoder.decode(buffer)
-      } catch (e) {
-        // UTF-8 ではない場合、Shift_JIS として読み込む
-        const decoder = new TextDecoder('shift_jis')
-        text = decoder.decode(buffer)
+      const uint8 = new Uint8Array(buffer)
+      const detected = Encoding.detect(uint8)
+      const encodingName = typeof detected === 'string' ? detected : 'UTF8'
+      setDetectedEncoding(encodingName)
+
+      // Unicode コードポイント配列に変換してから文字列化
+      const unicodeArray = Encoding.convert(uint8, {
+        to: 'UNICODE',
+        from: encodingName,
+      })
+      let text = Encoding.codeToString(unicodeArray)
+
+      // BOM 付き UTF-8 の先頭 BOM を除去
+      if (text.charCodeAt(0) === 0xfeff) {
+        text = text.slice(1)
       }
 
       setCsvText(text)
@@ -68,6 +83,7 @@ export function CsvImportForm({ onImport }: { onImport: (csv: string, mode: 'ins
       setPreview(null)
       setCsvText('')
       setIsUpsert(false)
+      setDetectedEncoding('')
       if (document.querySelector('input[type="file"]') instanceof HTMLInputElement) {
         (document.querySelector('input[type="file"]') as HTMLInputElement).value = ''
       }
@@ -109,6 +125,11 @@ export function CsvImportForm({ onImport }: { onImport: (csv: string, mode: 'ins
       {file && (
         <div className="mt-4 rounded bg-slate-50 p-4 text-sm text-slate-600">
           選択中: <strong>{file.name}</strong> ({(file.size / 1024).toFixed(1)} KB)
+          {detectedEncoding && (
+            <span className="ml-2 rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+              {detectedEncoding}
+            </span>
+          )}
         </div>
       )}
 
