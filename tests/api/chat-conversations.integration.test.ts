@@ -58,6 +58,13 @@ class MockQuery implements PromiseLike<{ data: Array<Record<string, unknown>> | 
     return Promise.resolve({ data: null, error: null })
   }
 
+  update(values: Record<string, unknown>) {
+    const tableData = this.getTableData()
+    const matched = tableData.filter((row) => this.filters.every((fn) => fn(row)))
+    matched.forEach((row) => Object.assign(row, values))
+    return this
+  }
+
   async single() {
     const { data } = await this.execute()
     const row = data?.[0]
@@ -141,6 +148,7 @@ vi.mock('@ai-sdk/openai', () => ({
 
 vi.mock('ai', () => ({
   convertToModelMessages: async (messages: unknown[]) => messages,
+  generateText: async () => ({ text: 'モックタイトル' }),
   streamText: async ({ onFinish }: { onFinish?: (event: { text: string }) => Promise<void> }) => {
     if (onFinish) {
       await onFinish({ text: 'AI mock answer' })
