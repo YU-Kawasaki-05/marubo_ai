@@ -4,6 +4,7 @@
  *   添付画像がある場合は attachments テーブルにも永続化する。
  *   分間レート制限（10 req/min）と月間クォータ（100 問/月）を適用。
  *   添付枚数（3枚）・メッセージ文字数（2000文字）のサーバーサイドバリデーション。
+ *   会話保存後に LLM（gpt-4o-mini）で20文字以内のタイトルを非同期生成。
  * 入力：JSON { messages: UIMessage[], attachments?: { storagePath, mimeType, size }[] }
  * 出力：Streaming Text Response
  * 依存：Vercel AI SDK, OpenAI, Supabase Auth, rateLimit
@@ -12,7 +13,7 @@
 
 import { openai } from '@ai-sdk/openai'
 import { createClient } from '@supabase/supabase-js'
-import { streamText, type UIMessage } from 'ai'
+import { generateText, streamText, type UIMessage } from 'ai'
 
 import { MAX_ATTACHMENTS_PER_MESSAGE, MAX_MESSAGE_LENGTH } from '@shared/lib/attachmentValidation'
 import { AppError } from '@shared/lib/errors'
@@ -187,6 +188,27 @@ export async function POST(req: Request) {
 
           // 利用カウンタを +1（月間クォータ管理用）
           await incrementUsage(appUserId)
+
+          // LLM でタイトルを非同期生成（失敗しても既存タイトルが残る）
+          if (userText && assistantText) {
+            void (async () => {
+              try {
+                const titleResult = await generateText({
+                  model: openai('gpt-4o-mini'),
+                  prompt: `以下のユーザーの質問とAIの回答から、20文字以内の短い会話タイトルを生成してください。タイトルのみを出力してください。\nユーザー: ${userText.slice(0, 200)}\nAI: ${assistantText.slice(0, 200)}`,
+                })
+                const generatedTitle = titleResult.text.trim().slice(0, 20)
+                if (generatedTitle) {
+                  await supabaseAdmin
+                    .from('conversations')
+                    .update({ title: generatedTitle })
+                    .eq('id', conversationId)
+                }
+              } catch (titleError) {
+                console.error('Title generation error:', titleError)
+              }
+            })()
+          }
         } catch (saveError) {
           console.error('Chat save error:', saveError)
           // 保存失敗はレスポンスには影響させない（ログのみ）

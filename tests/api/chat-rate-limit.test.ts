@@ -43,6 +43,9 @@ const mockClient = {
   },
   from: () => ({
     insert: () => Promise.resolve({ data: null, error: null }),
+    update: () => ({
+      eq: () => Promise.resolve({ data: null, error: null }),
+    }),
     select: () => ({
       eq: () => ({
         eq: () => ({ single: async () => ({ data: null, error: null }) }),
@@ -73,6 +76,7 @@ vi.mock('@ai-sdk/openai', () => ({
 
 vi.mock('ai', () => ({
   convertToModelMessages: async (messages: unknown[]) => messages,
+  generateText: async () => ({ text: 'モックタイトル' }),
   streamText: (...args: unknown[]) => aiMocks.streamText(...args),
 }))
 
