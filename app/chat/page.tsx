@@ -1,38 +1,62 @@
 'use client'
 
 import Link from 'next/link'
-import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { useCallback, useState, useEffect } from 'react'
 
 import { AllowlistGuard } from '@features/allowlist/components/AllowlistGuard'
 import { ChatInterface } from '@features/chat/components/ChatInterface'
 import { ConversationSidebar } from '@features/chat/components/ConversationSidebar'
 import { LogoutButton } from '@shared/components/LogoutButton'
+import { SessionExpiredModal } from '@shared/components/SessionExpiredModal'
 import { getSupabaseBrowserClient } from '@shared/lib/supabaseClient'
 
 export default function ChatPage() {
+  const router = useRouter()
   const [selectedId, setSelectedId] = useState<string>('')
   const [token, setToken] = useState<string | null>(null)
-  
+  const [showSessionExpired, setShowSessionExpired] = useState(false)
+
   // サイドバーを強制的に再レンダリングするためのキー（新規会話作成時などに更新）
   const [sidebarKey, setSidebarKey] = useState(0)
 
   // 認証トークンの取得と監視
   useEffect(() => {
     const supabase = getSupabaseBrowserClient()
-    
+
     // 初期化
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) setToken(session.access_token)
     })
-    
-    // 変更監視
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
-      if (session) setToken(session.access_token)
-      else setToken(null)
+
+    // 変更監視: イベント種別に応じたハンドリング
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setToken(null)
+        setShowSessionExpired(true)
+        return
+      }
+
+      if (event === 'TOKEN_REFRESHED' && session) {
+        setToken(session.access_token)
+        return
+      }
+
+      // その他のイベント（SIGNED_IN, INITIAL_SESSION 等）
+      if (session) {
+        setToken(session.access_token)
+      } else {
+        setToken(null)
+      }
     })
 
     return () => subscription.unsubscribe()
   }, [])
+
+  // セッション切れモーダル → ログイン画面へ遷移
+  const handleSessionExpiredConfirm = useCallback(() => {
+    router.push('/login')
+  }, [router])
 
   // 新規チャットが作成されたときのコールバック（サイドバー更新 + ID選択）
   const handleConversationCreated = (id: string) => {
@@ -97,6 +121,10 @@ export default function ChatPage() {
           </main>
         </div>
       </div>
+      <SessionExpiredModal
+        isOpen={showSessionExpired}
+        onConfirm={handleSessionExpiredConfirm}
+      />
     </AllowlistGuard>
   )
 }
