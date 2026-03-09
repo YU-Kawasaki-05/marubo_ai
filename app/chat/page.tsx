@@ -19,6 +19,8 @@ export default function ChatPage() {
 
   // サイドバーを強制的に再レンダリングするためのキー（新規会話作成時などに更新）
   const [sidebarKey, setSidebarKey] = useState(0)
+  // モバイルドロワーの開閉状態
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
   // 認証トークンの取得と監視
   useEffect(() => {
@@ -64,9 +66,10 @@ export default function ChatPage() {
     setSidebarKey(prev => prev + 1)
   }
 
-  // サイドバーで会話が選択されたとき
+  // サイドバーで会話が選択されたとき（モバイルドロワーも閉じる）
   const handleSelect = (id: string) => {
     setSelectedId(id)
+    setIsSidebarOpen(false)
   }
 
   return (
@@ -78,6 +81,21 @@ export default function ChatPage() {
       <div className="flex flex-col h-[100dvh] bg-gray-50">
         <header className="flex items-center justify-between border-b bg-white px-4 py-3 shadow-sm flex-shrink-0 z-10">
           <div className="flex items-center gap-2">
+            {/* モバイル用ハンバーガーメニューボタン */}
+            {token && (
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(true)}
+                className="p-1 text-gray-600 hover:text-gray-900 md:hidden"
+                aria-label="会話履歴を開く"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="3" y1="6" x2="21" y2="6" />
+                  <line x1="3" y1="12" x2="21" y2="12" />
+                  <line x1="3" y1="18" x2="21" y2="18" />
+                </svg>
+              </button>
+            )}
             <h1 className="text-lg font-bold text-gray-800">Marubo AI</h1>
             <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
               Beta
@@ -101,6 +119,46 @@ export default function ChatPage() {
         </header>
 
         <div className="flex flex-1 overflow-hidden">
+          {/* モバイルドロワー */}
+          {token && (
+            <>
+              {/* オーバーレイ */}
+              <div
+                className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-200 md:hidden ${
+                  isSidebarOpen ? 'opacity-100' : 'pointer-events-none opacity-0'
+                }`}
+                onClick={() => setIsSidebarOpen(false)}
+              />
+              {/* サイドパネル */}
+              <aside
+                className={`fixed left-0 top-0 z-50 flex h-full w-72 flex-col bg-white shadow-xl transition-transform duration-200 md:hidden ${
+                  isSidebarOpen ? 'translate-x-0' : '-translate-x-full'
+                }`}
+              >
+                <div className="flex items-center justify-between border-b px-4 py-3">
+                  <span className="text-sm font-bold text-gray-700">会話履歴</span>
+                  <button
+                    type="button"
+                    onClick={() => setIsSidebarOpen(false)}
+                    className="p-1 text-gray-500 hover:text-gray-900"
+                    aria-label="閉じる"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <div className="flex-1 overflow-hidden">
+                  <ConversationSidebar
+                    key={sidebarKey}
+                    token={token}
+                    selectedId={selectedId}
+                    onSelect={handleSelect}
+                  />
+                </div>
+              </aside>
+            </>
+          )}
+
+          {/* デスクトップサイドバー */}
           {token && (
             <aside className="hidden md:flex w-64 flex-col border-r bg-gray-50 overflow-hidden">
               <ConversationSidebar
