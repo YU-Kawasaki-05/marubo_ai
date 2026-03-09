@@ -34,7 +34,7 @@ type TableMap = {
 
 type FilterFn<T> = (row: T) => boolean
 
-type SelectResponse<T> = { data: T[] | null; error: null }
+type SelectResponse<T> = { data: T[] | null; count: number | null; error: null }
 type SingleResponse<T> = { data: T | null; error: { message: string } | null }
 
 const toLower = (v: string) => v.toLowerCase()
@@ -52,6 +52,10 @@ class MockQuery<T extends Record<string, any>> implements PromiseLike<SelectResp
   private payload: any = null
   private onConflict: keyof T | undefined
   private returnRows = false
+  private countMode = false
+  private headMode = false
+  private rangeFrom: number | undefined
+  private rangeTo: number | undefined
   private readonly tableName: TableName
   private readonly tables: TableMap
 
@@ -103,9 +107,17 @@ class MockQuery<T extends Record<string, any>> implements PromiseLike<SelectResp
     return this
   }
 
-  select() {
+  select(_columns?: string, opts?: { count?: 'exact'; head?: boolean }) {
     this.operation = this.operation ?? 'select'
     this.returnRows = true
+    if (opts?.count === 'exact') this.countMode = true
+    if (opts?.head) this.headMode = true
+    return this
+  }
+
+  range(from: number, to: number) {
+    this.rangeFrom = from
+    this.rangeTo = to
     return this
   }
 
@@ -156,7 +168,7 @@ class MockQuery<T extends Record<string, any>> implements PromiseLike<SelectResp
       const incoming = (this.payload as T[]).map((row) => this.normalizeInsert(row))
       table.push(...incoming)
       const data = this.returnRows ? incoming : null
-      return { data, error: null }
+      return { data, count: null, error: null }
     }
 
     if (this.operation === 'update') {
@@ -171,7 +183,7 @@ class MockQuery<T extends Record<string, any>> implements PromiseLike<SelectResp
         return row
       }) as any
       const data = this.returnRows ? updated : null
-      return { data, error: null }
+      return { data, count: null, error: null }
     }
 
     if (this.operation === 'upsert') {
@@ -192,7 +204,7 @@ class MockQuery<T extends Record<string, any>> implements PromiseLike<SelectResp
         touched.push(normalized)
       })
       const data = this.returnRows ? touched : null
-      return { data, error: null }
+      return { data, count: null, error: null }
     }
 
     // select (default)
@@ -205,7 +217,14 @@ class MockQuery<T extends Record<string, any>> implements PromiseLike<SelectResp
         return (a[field] > b[field] ? 1 : -1) * (asc ? 1 : -1)
       })
     }
-    return { data, error: null }
+    const totalCount = this.countMode ? data.length : null
+    if (this.rangeFrom !== undefined && this.rangeTo !== undefined) {
+      data = data.slice(this.rangeFrom, this.rangeTo + 1)
+    }
+    if (this.headMode) {
+      return { data: null, count: totalCount, error: null }
+    }
+    return { data, count: totalCount, error: null }
   }
 
   private normalizeInsert(row: any): T {
