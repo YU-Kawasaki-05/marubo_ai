@@ -4,6 +4,7 @@
  * 出力: ページング済み会話一覧 or 会話詳細（メッセージ＋添付）。
  * 依存: Supabase Service Role クライアント、AppError。
  * セキュリティ: requireStaff() で認可済みの呼び出しのみ想定。
+ * 最適化: ページネーション・メッセージ数集計はサーバーサイド（select count + range）。
  */
 
 import type { Database } from '../types/database'
@@ -95,8 +96,9 @@ export async function listConversations(
     filteredUserIds = (users as AppUserRow[]).map((u) => u.id)
   }
 
-  // Step 2: build conversations query with filters
-  let query = supabase.from('conversations').select()
+  // Step 2: build conversations query with filters + server-side pagination
+  const offset = (page - 1) * limit
+  let query = supabase.from('conversations').select('*', { count: 'exact' })
 
   if (filteredUserIds) {
     query = query.in('user_id', filteredUserIds)
@@ -119,43 +121,36 @@ export async function listConversations(
   }
 
   query = query.order('created_at', { ascending: false })
+  query = query.range(offset, offset + limit - 1)
 
-  const { data: allConversations } = await query
+  const { data: paged, count: totalCount } = await query
 
-  if (!allConversations || allConversations.length === 0) {
-    return {
-      conversations: [],
-      pagination: { page, limit, total: 0, totalPages: 0 },
-    }
-  }
-
-  // Step 3: paginate in JS
-  const total = allConversations.length
+  const total = totalCount ?? 0
   const totalPages = Math.ceil(total / limit)
-  const offset = (page - 1) * limit
-  const paged = (allConversations as ConversationRow[]).slice(offset, offset + limit)
 
-  if (paged.length === 0) {
+  if (!paged || paged.length === 0) {
     return {
       conversations: [],
       pagination: { page, limit, total, totalPages },
     }
   }
 
-  // Step 4: count messages per conversation
-  const convIds = paged.map((c) => c.id)
-  const { data: messages } = await supabase
-    .from('messages')
-    .select()
-    .in('conversation_id', convIds)
-
+  // Step 3: count messages per conversation (server-side HEAD count)
+  const pagedConvs = paged as ConversationRow[]
+  const convIds = pagedConvs.map((c) => c.id)
   const messageCountMap = new Map<string, number>()
-  for (const msg of (messages as MessageRow[]) ?? []) {
-    messageCountMap.set(msg.conversation_id, (messageCountMap.get(msg.conversation_id) ?? 0) + 1)
-  }
+  await Promise.all(
+    convIds.map(async (convId) => {
+      const { count } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('conversation_id', convId)
+      messageCountMap.set(convId, count ?? 0)
+    }),
+  )
 
-  // Step 5: resolve user info
-  const userIds = [...new Set(paged.map((c) => c.user_id))]
+  // Step 4: resolve user info
+  const userIds = [...new Set(pagedConvs.map((c) => c.user_id))]
   const { data: users } = await supabase.from('app_user').select().in('id', userIds)
 
   const userMap = new Map<string, AppUserRow>()
@@ -163,8 +158,8 @@ export async function listConversations(
     userMap.set(u.id, u)
   }
 
-  // Step 6: assemble response
-  const conversations: ConversationListItem[] = paged.map((c) => {
+  // Step 5: assemble response
+  const conversations: ConversationListItem[] = pagedConvs.map((c) => {
     const user = userMap.get(c.user_id)
     return {
       id: c.id,
