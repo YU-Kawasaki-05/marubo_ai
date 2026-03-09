@@ -1,6 +1,6 @@
 /** @file
  * ログインページ
- * 機能: メールアドレス・パスワードでのログイン / 新規登録
+ * 機能: メールアドレス・パスワードでのログイン / 新規登録 / パスワードリセット導線
  * ログイン成功後、/api/sync-user の role と allowedEmailStatus に応じてルーティング先を決定
  *   - staff → /admin/allowlist
  *   - student (active) → /chat
@@ -23,6 +23,8 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [messageType, setMessageType] = useState<'info' | 'error' | 'warning'>('info')
+  const [showResetForm, setShowResetForm] = useState(false)
+  const [resetEmail, setResetEmail] = useState('')
 
   const supabase = getSupabaseBrowserClient()
 
@@ -145,6 +147,27 @@ export default function LoginPage() {
     }
   }
 
+  const handleResetPassword = async () => {
+    const trimmed = resetEmail.trim()
+    if (!trimmed) return
+    setIsLoading(true)
+    setMessage(null)
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(trimmed, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      })
+      if (error) throw error
+      setMessageType('info')
+      setMessage('パスワードリセットメールを送信しました。メールのリンクからパスワードを再設定してください。')
+    } catch (err) {
+      const error = err as Error
+      setMessageType('error')
+      setMessage(`エラー: ${error.message}`)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
       <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-md">
@@ -199,8 +222,49 @@ export default function LoginPage() {
           </div>
         </form>
 
+        {showResetForm ? (
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="mb-2 text-center text-sm font-medium text-slate-700">パスワードリセット</p>
+            <div className="space-y-3">
+              <input
+                type="email"
+                required
+                value={resetEmail}
+                onChange={(e) => setResetEmail(e.target.value)}
+                className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+                placeholder="登録済みメールアドレス"
+              />
+              <button
+                type="button"
+                onClick={handleResetPassword}
+                disabled={isLoading || !resetEmail.trim()}
+                className="w-full rounded bg-slate-600 py-2 text-sm font-bold text-white hover:bg-slate-700 disabled:opacity-50"
+              >
+                {isLoading ? '送信中...' : 'リセットメール送信'}
+              </button>
+              <button
+                type="button"
+                onClick={() => { setShowResetForm(false); setMessage(null) }}
+                className="w-full text-center text-xs text-slate-500 hover:underline"
+              >
+                ログインに戻る
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 text-center">
+            <button
+              type="button"
+              onClick={() => { setShowResetForm(true); setMessage(null) }}
+              className="text-xs text-slate-500 hover:underline"
+            >
+              パスワードを忘れた方
+            </button>
+          </div>
+        )}
+
         <div className="mt-4 border-t border-slate-100 pt-4 text-center">
-          <p className="text-xs text-slate-500 mb-2">アカウントをお持ちでない場合</p>
+          <p className="mb-2 text-xs text-slate-500">アカウントをお持ちでない場合</p>
           <button
             type="button"
             onClick={handleSignUp}
