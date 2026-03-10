@@ -1,8 +1,8 @@
 /** @file
  * `/admin/reports` スタッフ用月次レポート管理ページ。
  * 入力: Supabase セッション（Bearer トークン）。
- * 出力: 操作パネル（生成/dry-run/CSV DL）+ レポート一覧テーブル + ページネーション。
- * 依存: useReportsQuery, useReportsMutation, MonthSelector, Supabase Browser Client。
+ * 出力: 操作パネル（生成/dry-run/CSV DL）+ レポート一覧テーブル + ページネーション + レポート詳細パネル。
+ * 依存: useReportsQuery, useReportsMutation, MonthSelector, ReportContent, Supabase Browser Client。
  * セキュリティ: requireStaff() で API 側で認可チェック。
  */
 
@@ -17,6 +17,8 @@ import {
   type ReportsQueryParams,
 } from '../../../src/features/admin/reports/hooks/useReportsQuery'
 import { MonthSelector } from '../../../src/features/reports/components/MonthSelector'
+import { ReportContent } from '../../../src/features/reports/components/ReportContent'
+import type { StudentReport } from '../../../src/features/reports/hooks/useStudentReport'
 import { ConfirmDialog } from '../../../src/shared/components/ConfirmDialog'
 import { LogoutButton } from '../../../src/shared/components/LogoutButton'
 import { getSupabaseBrowserClient } from '../../../src/shared/lib/supabaseClient'
@@ -78,6 +80,12 @@ export default function AdminReportsPage() {
     open: false, title: '', message: '', onConfirm: () => {},
   })
 
+  // レポート詳細パネル
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null)
+  const [selectedUserLabel, setSelectedUserLabel] = useState('')
+  const [detailReport, setDetailReport] = useState<StudentReport | null>(null)
+  const [detailLoading, setDetailLoading] = useState(false)
+
   const closeDialog = () => setDialog((prev) => ({ ...prev, open: false }))
 
   const showAlert = (title: string, message: string) => {
@@ -107,6 +115,41 @@ export default function AdminReportsPage() {
   const handleMonthChange = (month: string) => {
     setSelectedMonth(month)
     setPage(1)
+    setSelectedUserId(null)
+    setDetailReport(null)
+  }
+
+  const handleViewReport = async (userId: string, userLabel: string) => {
+    // 同じユーザーを再度クリック → 閉じる
+    if (selectedUserId === userId) {
+      setSelectedUserId(null)
+      setDetailReport(null)
+      return
+    }
+
+    setSelectedUserId(userId)
+    setSelectedUserLabel(userLabel)
+    setDetailLoading(true)
+    setDetailReport(null)
+
+    try {
+      const url = `/api/reports/monthly?month=${encodeURIComponent(selectedMonth)}&userId=${encodeURIComponent(userId)}&detail=true`
+      const res = await fetch(url, { headers: headers as HeadersInit })
+      if (!res.ok) throw new Error(`レポート詳細の取得に失敗しました (${res.status})`)
+      const json = await res.json()
+      setDetailReport(json.data?.report ?? null)
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
+      showAlert('エラー', msg)
+      setSelectedUserId(null)
+    } finally {
+      setDetailLoading(false)
+    }
+  }
+
+  const handleCloseDetail = () => {
+    setSelectedUserId(null)
+    setDetailReport(null)
   }
 
   const handleDryRun = () => {
@@ -347,18 +390,41 @@ export default function AdminReportsPage() {
                         {report.generatedAt ? formatDateTime(report.generatedAt) : '-'}
                       </td>
                       <td className="px-4 py-2">
-                        {(report.status === 'failed' || report.status === 'generated') && (
-                          <button
-                            type="button"
-                            onClick={() =>
-                              handleRegenerate(report.userId, report.user.email, report.status)
-                            }
-                            disabled={generating}
-                            className="rounded border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
-                          >
-                            再生成
-                          </button>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {report.status === 'generated' && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleViewReport(
+                                  report.userId,
+                                  report.user.displayName || report.user.email,
+                                )
+                              }
+                              disabled={detailLoading && selectedUserId === report.userId}
+                              className={`rounded border px-3 py-1 text-xs font-medium transition-colors disabled:opacity-50 ${
+                                selectedUserId === report.userId
+                                  ? 'border-blue-400 bg-blue-100 text-blue-800'
+                                  : 'border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100'
+                              }`}
+                            >
+                              {detailLoading && selectedUserId === report.userId
+                                ? '読込中...'
+                                : '閲覧'}
+                            </button>
+                          )}
+                          {(report.status === 'failed' || report.status === 'generated') && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                handleRegenerate(report.userId, report.user.email, report.status)
+                              }
+                              disabled={generating}
+                              className="rounded border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                            >
+                              再生成
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   )
@@ -393,6 +459,36 @@ export default function AdminReportsPage() {
           </div>
         )}
       </section>
+      {/* セクション 3: レポート詳細パネル */}
+      {selectedUserId && (
+        <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+            <div>
+              <h2 className="text-sm font-medium text-slate-700">レポート詳細</h2>
+              <p className="text-sm text-slate-600">{selectedUserLabel}</p>
+            </div>
+            <button
+              type="button"
+              onClick={handleCloseDetail}
+              className="rounded border border-slate-300 px-3 py-1 text-sm text-slate-700 hover:bg-slate-50"
+            >
+              閉じる
+            </button>
+          </div>
+          <div className="p-4">
+            {detailLoading && (
+              <p className="py-8 text-center text-slate-500">読み込み中...</p>
+            )}
+            {!detailLoading && !detailReport && (
+              <p className="py-8 text-center text-slate-500">レポートが見つかりませんでした。</p>
+            )}
+            {!detailLoading && detailReport && (
+              <ReportContent report={detailReport} />
+            )}
+          </div>
+        </section>
+      )}
+
       <ConfirmDialog
         open={dialog.open}
         title={dialog.title}

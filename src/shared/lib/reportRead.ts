@@ -47,6 +47,18 @@ type StaffReportListResponse = {
   pagination: { page: number; limit: number; total: number; totalPages: number }
 }
 
+export type StaffReportDetailResponse = {
+  report: {
+    id: string
+    month: string
+    status: string
+    content: string | null
+    stats: unknown
+    generatedAt: string | null
+    user: { email: string; displayName: string | null }
+  } | null
+}
+
 // ── 生徒用（自分のレポート 1 件） ──
 
 export async function getStudentReport(
@@ -141,6 +153,51 @@ export async function getStaffReportList(
   return {
     reports,
     pagination: { page, limit, total, totalPages },
+  }
+}
+
+// ── スタッフ用（個別レポート詳細 — content 含む） ──
+
+export async function getStaffReportDetail(
+  month: string,
+  userId: string,
+): Promise<StaffReportDetailResponse> {
+  if (!month || !/^\d{4}-\d{2}$/.test(month)) {
+    throw new AppError(400, 'INVALID_MONTH', 'month は YYYY-MM 形式で指定してください。')
+  }
+
+  const supabase = getSupabaseAdminClient()
+
+  const { data: reports } = await supabase
+    .from('monthly_report')
+    .select()
+    .eq('user_id', userId)
+    .eq('month', month)
+
+  const rows = (reports ?? []) as MonthlyReportRow[]
+  if (rows.length === 0) {
+    return { report: null }
+  }
+
+  const r = rows[0]
+
+  // Resolve user info
+  const { data: users } = await supabase.from('app_user').select().eq('id', userId)
+  const user = ((users ?? []) as AppUserRow[])[0]
+
+  return {
+    report: {
+      id: r.id,
+      month: r.month,
+      status: r.status,
+      content: r.content,
+      stats: r.stats,
+      generatedAt: r.generated_at,
+      user: {
+        email: user?.email ?? '',
+        displayName: user?.display_name ?? null,
+      },
+    },
   }
 }
 
