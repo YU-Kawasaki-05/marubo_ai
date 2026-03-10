@@ -281,6 +281,19 @@ describe('GET /api/reports/monthly (mock supabase)', () => {
     expect(body.data.report).toBeNull()
   })
 
+  it('staff: detail=true + non-existent userId returns null', async () => {
+    await seedReports()
+
+    const res = await GET(
+      new Request(`${BASE_URL}?month=2026-02&userId=non-existent-id&detail=true`, {
+        headers: STAFF_HEADER,
+      }),
+    )
+    const body = await parseJson(res)
+    expect(res.status).toBe(200)
+    expect(body.data.report).toBeNull()
+  })
+
   it('staff: detail=true without userId falls through to list', async () => {
     await seedReports()
 
@@ -294,6 +307,21 @@ describe('GET /api/reports/monthly (mock supabase)', () => {
     // Should return list format (reports array), not detail format
     expect(body.data.reports).toBeDefined()
     expect(body.data.reports).toHaveLength(2)
+  })
+
+  it('student: detail param is ignored (returns own report only)', async () => {
+    await seedReports()
+
+    const res = await GET(
+      new Request(`${BASE_URL}?month=2026-02&userId=student2-read-id&detail=true`, {
+        headers: STUDENT_HEADER,
+      }),
+    )
+    const body = await parseJson(res)
+    expect(res.status).toBe(200)
+    // Student path ignores userId/detail params, returns own report
+    expect(body.data.report).not.toBeNull()
+    expect(body.data.report.id).toBe('rpt-1')
   })
 
   // ── Validation ──
@@ -325,88 +353,6 @@ describe('GET /api/reports/monthly (mock supabase)', () => {
     const body = await parseJson(res)
     expect(res.status).toBe(401)
     expect(body.error.code).toBe('UNAUTHORIZED')
-  })
-})
-
-describe('GET /api/reports/monthly?detail=true (staff report detail)', () => {
-  beforeEach(() => {
-    process.env.MOCK_SUPABASE = 'true'
-    resetSupabaseAdminClientForTest()
-  })
-
-  it('staff: returns report with content for specific userId', async () => {
-    await seedReports()
-
-    const res = await GET(
-      new Request(`${BASE_URL}?month=2026-02&userId=student-read-id&detail=true`, {
-        headers: STAFF_HEADER,
-      }),
-    )
-    const body = await parseJson(res)
-    expect(res.status).toBe(200)
-    expect(body.data.report).not.toBeNull()
-    expect(body.data.report.id).toBe('rpt-1')
-    expect(body.data.report.content).toContain('テストレポート1')
-    expect(body.data.report.user.email).toBe('student@example.com')
-    expect(body.data.report.user.displayName).toBe('Test Student')
-    expect(body.data.report.stats).toBeTruthy()
-    expect(body.data.report.generatedAt).toBe('2026-02-28T23:58:00.000Z')
-  })
-
-  it('staff: returns null for non-existent userId', async () => {
-    await seedReports()
-
-    const res = await GET(
-      new Request(`${BASE_URL}?month=2026-02&userId=non-existent-id&detail=true`, {
-        headers: STAFF_HEADER,
-      }),
-    )
-    const body = await parseJson(res)
-    expect(res.status).toBe(200)
-    expect(body.data.report).toBeNull()
-  })
-
-  it('staff: returns null for month with no report', async () => {
-    await seedReports()
-
-    const res = await GET(
-      new Request(`${BASE_URL}?month=2026-01&userId=student-read-id&detail=true`, {
-        headers: STAFF_HEADER,
-      }),
-    )
-    const body = await parseJson(res)
-    expect(res.status).toBe(200)
-    expect(body.data.report).toBeNull()
-  })
-
-  it('staff: without detail param falls back to list', async () => {
-    await seedReports()
-
-    const res = await GET(
-      new Request(`${BASE_URL}?month=2026-02&userId=student-read-id`, {
-        headers: STAFF_HEADER,
-      }),
-    )
-    const body = await parseJson(res)
-    expect(res.status).toBe(200)
-    // List response has reports array, not single report
-    expect(body.data.reports).toBeDefined()
-    expect(body.data.reports).toHaveLength(1)
-  })
-
-  it('student: cannot use detail param (returns own report only)', async () => {
-    await seedReports()
-
-    const res = await GET(
-      new Request(`${BASE_URL}?month=2026-02&userId=student2-read-id&detail=true`, {
-        headers: STUDENT_HEADER,
-      }),
-    )
-    const body = await parseJson(res)
-    expect(res.status).toBe(200)
-    // Student path ignores userId/detail params, returns own report
-    expect(body.data.report).not.toBeNull()
-    expect(body.data.report.id).toBe('rpt-1')
   })
 })
 
