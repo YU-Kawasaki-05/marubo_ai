@@ -50,6 +50,17 @@ vi.mock('@shared/lib/supabaseAdmin', () => ({
   resetSupabaseAdminClientForTest: () => {},
 }))
 
+const mockCheckMinuteRate = vi.fn().mockResolvedValue(undefined)
+
+vi.mock('@shared/lib/rateLimit', () => ({
+  resolveAppUserId: async () => 'mock-app-user-id',
+  checkMinuteRate: (...args: unknown[]) => mockCheckMinuteRate(...args),
+}))
+
+vi.mock('@shared/lib/notifier', () => ({
+  notifyError: async () => {},
+}))
+
 import { POST } from '../../app/api/attachments/sign/route'
 
 function buildRequest(
@@ -75,6 +86,7 @@ describe('/api/attachments/sign', () => {
   beforeEach(() => {
     mockState.signedUploadCalls = []
     mockState.signError = null
+    mockCheckMinuteRate.mockResolvedValue(undefined)
   })
 
   // --- 認証系テスト ---
@@ -175,6 +187,19 @@ describe('/api/attachments/sign', () => {
     const exactMax = 5 * 1024 * 1024
     const res = await POST(buildRequest({ mimeType: 'image/jpeg', size: exactMax }, 'student-token'))
     expect(res.status).toBe(200)
+  })
+
+  // --- レート制限テスト ---
+
+  it('レート制限超過時に 429 を返す', async () => {
+    const { AppError } = await import('@shared/lib/errors')
+    mockCheckMinuteRate.mockRejectedValueOnce(
+      new AppError(429, 'RATE_LIMIT_EXCEEDED', '送信が早すぎます。'),
+    )
+    const res = await POST(buildRequest({ mimeType: 'image/jpeg', size: 1000 }, 'student-token'))
+    expect(res.status).toBe(429)
+    const body = await parseJson(res)
+    expect((body.error as Record<string, string>).code).toBe('RATE_LIMIT_EXCEEDED')
   })
 
   // --- Storage エラー系テスト ---
