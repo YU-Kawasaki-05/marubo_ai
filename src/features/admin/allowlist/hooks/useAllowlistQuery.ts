@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useState } from 'react'
+/** @file
+ * 許可メール一覧データ取得フック。
+ * 入力: headers（認証トークン）、search、status フィルタ。
+ * 出力: { data, error, loading, refetch }。
+ * 依存: React hooks。
+ * セキュリティ: Bearer トークンを headers 経由で送信。
+ */
+
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 type AllowedEmailStatus = 'active' | 'pending' | 'revoked'
 
@@ -25,10 +33,13 @@ export function useAllowlistQuery(options: UseAllowlistQueryOptions = {}) {
   const [data, setData] = useState<AllowedEmail[] | null>(null)
   const [error, setError] = useState<Error | null>(null)
   const [loading, setLoading] = useState(true)
+  const [revision, setRevision] = useState(0)
 
   const headersKey = headers ? JSON.stringify(headers) : ''
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const headersMemo = useMemo(() => headers, [headersKey])
+
+  const refetch = useCallback(() => setRevision((r) => r + 1), [])
 
   useEffect(() => {
     let mounted = true
@@ -63,7 +74,7 @@ export function useAllowlistQuery(options: UseAllowlistQueryOptions = {}) {
     return () => {
       mounted = false
     }
-  }, [fetcher, headersMemo, search, status])
+  }, [fetcher, headersMemo, search, status, revision])
 
-  return { data, error, loading }
+  return { data, error, loading, refetch }
 }
