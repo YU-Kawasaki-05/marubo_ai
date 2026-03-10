@@ -1,3 +1,12 @@
+/** @file
+ * ログイン中ユーザーの許可ステータスを取得するフック。
+ * 機能：Supabase セッションから email を取得し allowed_email テーブルを参照。
+ * 入力：なし（内部で Supabase Browser Client を使用）。
+ * 出力：{ status: AllowedEmailStatus | 'not-found', loading: boolean }。
+ * 依存：Supabase Browser Client。
+ * セキュリティ：RLS により自分の行のみ取得可能。
+ */
+
 import { useEffect, useState } from 'react'
 
 import { getSupabaseBrowserClient } from '../../../shared/lib/supabaseClient'
