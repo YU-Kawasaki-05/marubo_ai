@@ -101,7 +101,7 @@ export default function AdminReportsPage() {
     [selectedMonth, page],
   )
 
-  const { data, loading, error } = useReportsQuery({ headers, params: queryParams })
+  const { data, loading, error, refetch } = useReportsQuery({ headers, params: queryParams })
   const { generateReports, regenerateReport, downloadCsv } = useReportsMutation({ headers })
 
   const handleMonthChange = (month: string) => {
@@ -124,6 +124,7 @@ export default function AdminReportsPage() {
             'Dry Run 完了',
             `対象ユーザー数: ${result?.targetCount ?? '-'}\nスキップ: ${result?.skippedCount ?? '-'}`,
           )
+          refetch()
         } catch (err) {
           const msg = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
           showAlert('エラー', msg)
@@ -149,6 +150,7 @@ export default function AdminReportsPage() {
             '生成完了',
             `成功: ${result?.successCount ?? '-'}\n失敗: ${result?.failedCount ?? '-'}\nスキップ: ${result?.skippedCount ?? '-'}`,
           )
+          refetch()
         } catch (err) {
           const msg = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
           showAlert('エラー', msg)
@@ -171,6 +173,7 @@ export default function AdminReportsPage() {
         try {
           await regenerateReport(selectedMonth, userId)
           showAlert('完了', '再生成が完了しました。')
+          refetch()
         } catch (err) {
           const msg = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
           showAlert('エラー', msg)

@@ -6,7 +6,7 @@
  * セキュリティ: Bearer トークンを headers 経由で送信。
  */
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 export type ReportUser = {
   email: string
@@ -53,6 +53,7 @@ export function useReportsQuery(options: UseReportsQueryOptions = {}) {
   const [data, setData] = useState<ReportsData | null>(null)
   const [error, setError] = useState<Error | null>(null)
   const [loading, setLoading] = useState(true)
+  const [revision, setRevision] = useState(0)
 
   const headersKey = headers ? JSON.stringify(headers) : ''
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -61,6 +62,8 @@ export function useReportsQuery(options: UseReportsQueryOptions = {}) {
   const paramsKey = params ? JSON.stringify(params) : ''
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const paramsMemo = useMemo(() => params, [paramsKey])
+
+  const refetch = useCallback(() => setRevision((r) => r + 1), [])
 
   useEffect(() => {
     if (!headersMemo || !paramsMemo?.month) {
@@ -101,7 +104,7 @@ export function useReportsQuery(options: UseReportsQueryOptions = {}) {
     return () => {
       mounted = false
     }
-  }, [fetcher, headersMemo, paramsMemo])
+  }, [fetcher, headersMemo, paramsMemo, revision])
 
-  return { data, error, loading }
+  return { data, error, loading, refetch }
 }

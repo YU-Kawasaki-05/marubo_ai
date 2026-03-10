@@ -1,3 +1,11 @@
+/** @file
+ * `/admin/allowlist` スタッフ用許可メール管理ページ。
+ * 入力: Supabase セッション（Bearer トークン）。
+ * 出力: 検索/フィルタ付き許可メール一覧 + ステータス変更 + CSV 一括登録。
+ * 依存: useAllowlistQuery, useAllowlistMutations, CsvImportForm, ConfirmDialog。
+ * セキュリティ: requireStaff() で API 側で認可チェック。
+ */
+
 'use client'
 
 import Link from 'next/link'
@@ -22,18 +30,20 @@ type DialogState = {
 
 type AllowedEmailStatus = 'active' | 'pending' | 'revoked'
 
+type FlashMessage = {
+  type: 'success' | 'error'
+  text: string
+}
+
 export default function AllowlistPage() {
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<AllowedEmailStatus | 'all'>('all')
+  const [flash, setFlash] = useState<FlashMessage | null>(null)
   const [dialog, setDialog] = useState<DialogState>({
     open: false, title: '', message: '', onConfirm: () => {},
   })
 
   const closeDialog = () => setDialog((prev) => ({ ...prev, open: false }))
-
-  const showAlert = (title: string, message: string) => {
-    setDialog({ open: true, title, message, cancelLabel: null, onConfirm: closeDialog })
-  }
 
   // 認証トークンの管理
   const [token, setToken] = useState<string | null>(null)
@@ -53,7 +63,7 @@ export default function AllowlistPage() {
     return token ? { Authorization: `Bearer ${token}` } : undefined
   }, [token])
 
-  const { data, loading, error } = useAllowlistQuery({
+  const { data, loading, error, refetch } = useAllowlistQuery({
     search: search || undefined,
     status: statusFilter,
     headers, // 定義済みの headers を渡す
@@ -109,6 +119,27 @@ export default function AllowlistPage() {
         </div>
       </header>
 
+      {flash && (
+        <div
+          role="status"
+          className={`flex items-center justify-between rounded-lg px-4 py-3 text-sm font-medium ${
+            flash.type === 'success'
+              ? 'border border-green-200 bg-green-50 text-green-800'
+              : 'border border-red-200 bg-red-50 text-red-800'
+          }`}
+        >
+          <span>{flash.text}</span>
+          <button
+            type="button"
+            onClick={() => setFlash(null)}
+            className="ml-4 shrink-0 text-lg leading-none opacity-60 hover:opacity-100"
+            aria-label="閉じる"
+          >
+            &times;
+          </button>
+        </div>
+      )}
+
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <input
@@ -160,10 +191,11 @@ export default function AllowlistPage() {
                         closeDialog()
                         try {
                           await updateAllowedEmail(item.email, { status: next })
-                          window.location.reload()
+                          setFlash({ type: 'success', text: `${item.email} のステータスを ${next} に変更しました` })
+                          refetch()
                         } catch (err) {
                           const msg = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
-                          showAlert('更新エラー', msg)
+                          setFlash({ type: 'error', text: msg })
                         }
                       },
                     })
@@ -183,7 +215,8 @@ export default function AllowlistPage() {
       <CsvImportForm
         onImport={async (csv, mode) => {
           await importCsv(csv, mode)
-          window.location.reload()
+          setFlash({ type: 'success', text: 'CSV 一括登録が完了しました' })
+          refetch()
         }}
       />
 
