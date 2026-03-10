@@ -90,6 +90,7 @@
 | GFX-23 | GAP-23 | 署名 URL API レート制限 | Backlog |
 | GFX-24 | GAP-24 | 生成済みレポート再生成対応 | Backlog |
 | GFX-25 | GAP-27 | ストリーム中断/キャンセル機能 | Backlog |
+| GFX-26 | GAP-28 | スタッフ用レポート閲覧パネル実装 | Backlog |
 
 ---
 
@@ -1391,6 +1392,80 @@ Acceptance Criteria (Done)
 
 ---
 
+## GFX-26: GAP-28（スタッフ用レポート閲覧パネル実装）
+
+```text
+[Task Title]
+GAP-28: スタッフ用管理画面にレポート本文の閲覧パネルを実装する
+
+Goal
+- スタッフが /admin/reports の一覧テーブルから個別レポートの本文（LLM 生成 Markdown）を
+  直接閲覧できるようにする。仕様書（docs/reports/monthly.md §3.2）に記載された
+  「レポート詳細パネル」と「[閲覧]ボタン」が未実装のため追加する。
+
+Context
+- 参照: docs/reports/monthly.md §3.2（スタッフ用レポートページ仕様）
+- 現在の実装:
+  - app/admin/reports/page.tsx: 一覧テーブルに「再生成」ボタンはあるが「閲覧」ボタンがない
+  - src/shared/lib/reportRead.ts の getStaffReportList() は一覧用のため content を返していない
+  - src/features/reports/components/ReportContent.tsx: 生徒用レポート表示コンポーネントは
+    既に実装済み（react-markdown + remark-gfm で記事風表示）
+  - GET /api/reports/monthly はスタッフ用一覧を返すが、個別レポートの content 取得手段がない
+
+Scope
+- 変更OK:
+  - src/shared/lib/reportRead.ts（スタッフが個別レポートの content を取得する関数を追加）
+  - app/api/reports/monthly/route.ts（GET のスタッフ用処理に userId 指定時の単一レポート返却を追加）
+  - app/admin/reports/page.tsx（「閲覧」ボタン追加 + レポート詳細パネルの表示）
+  - tests/**（新規関数のテスト追加）
+- 変更NG:
+  - 生徒用レポートページ（app/reports/page.tsx）の変更
+  - ReportContent コンポーネント本体のレイアウト変更
+  - DB スキーマ変更
+  - POST（生成）側のロジック変更
+
+Implementation Hints
+- API 拡張:
+  - GET /api/reports/monthly?month=YYYY-MM&userId=xxx をスタッフが呼んだ場合、
+    getStaffReportList は既に userId フィルタに対応している
+  - ただし content を含んでいないため、reportRead.ts に個別取得関数を追加:
+    ```ts
+    export async function getStaffReportDetail(
+      month: string, userId: string
+    ): Promise<{ report: { id, month, status, content, stats, generatedAt, user } | null }>
+    ```
+  - monthly_report テーブルから user_id + month で 1 件取得し content を含めて返却
+  - route.ts の GET スタッフ分岐で userId が指定されている場合に detail を返すよう拡張
+- フロントエンド:
+  - 一覧テーブルの各行（report.status === 'generated' の場合）に「閲覧」ボタンを追加
+  - ボタン押下で selectedReportUserId を state に設定
+  - selectedReportUserId が設定されている場合、テーブルの下に詳細パネルを表示:
+    1. GET /api/reports/monthly?month=YYYY-MM&userId=xxx を fetch
+    2. 取得した report を ReportContent コンポーネントに渡して記事風表示
+    3. パネル上部に「閉じる」ボタンと生徒のメール/表示名を表示
+  - ReportContent は既存のものをそのまま import して使用
+    （src/features/reports/components/ReportContent.tsx）
+  - レポート選択の切り替え時は前の詳細を閉じて新しいものを表示
+- 「閲覧」ボタンの配置:
+  - 既存の「再生成」ボタンの左に配置
+  - generated: 「閲覧」+「再生成」の 2 ボタン
+  - failed: 「再生成」のみ（content がないため閲覧不可）
+  - generating / pending: ボタンなし（既存動作維持）
+
+Acceptance Criteria (Done)
+- [ ] reportRead.ts に getStaffReportDetail 関数が追加されている
+- [ ] GET /api/reports/monthly でスタッフが userId 指定時に content 付きの単一レポートを取得できる
+- [ ] /admin/reports の一覧テーブルで generated のレポートに「閲覧」ボタンが表示される
+- [ ] 「閲覧」ボタン押下でテーブル下部にレポート詳細パネル（記事風 Markdown 表示）が表示される
+- [ ] 詳細パネルに生徒のメール/表示名が表示される
+- [ ] 詳細パネルの「閉じる」ボタンで非表示にできる
+- [ ] ReportContent コンポーネントが再利用されている（生徒用と同一の表示品質）
+- [ ] テストが追加されている
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
 ## 4. 実装ロードマップサマリー
 
 ```
@@ -1408,7 +1483,7 @@ Sprint 3 (1-2週間): GFX-09, GFX-10, GFX-11, GFX-12 (すべて並列可)
 Sprint 4 (1-2週間): GFX-13, GFX-14, GFX-15, GFX-16, GFX-17, GFX-18
   → パフォーマンス + セキュリティの堅牢化
 
-Backlog: GFX-19, GFX-20, GFX-21, GFX-22, GFX-23, GFX-24, GFX-25
+Backlog: GFX-19, GFX-20, GFX-21, GFX-22, GFX-23, GFX-24, GFX-25, GFX-26
   → 優先度に応じて順次対応
 
 ゲート G: 全スプリント完了後の最終受け入れ
