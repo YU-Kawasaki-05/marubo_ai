@@ -161,12 +161,16 @@ export default function AdminReportsPage() {
     })
   }
 
-  const handleRegenerate = (userId: string, email: string) => {
+  const handleRegenerate = (userId: string, email: string, status: string) => {
+    const isOverwrite = status === 'generated'
     setDialog({
       open: true,
-      title: '再生成の確認',
-      message: `${email} のレポートを再生成しますか？`,
-      confirmLabel: '再生成する',
+      title: isOverwrite ? '再生成（上書き）の確認' : '再生成の確認',
+      message: isOverwrite
+        ? `${email} のレポートは既に生成済みです。上書きして再生成しますか？`
+        : `${email} のレポートを再生成しますか？`,
+      variant: isOverwrite ? 'destructive' : 'default',
+      confirmLabel: isOverwrite ? '上書き再生成する' : '再生成する',
       onConfirm: async () => {
         closeDialog()
         setGenerating(true)
@@ -343,11 +347,11 @@ export default function AdminReportsPage() {
                         {report.generatedAt ? formatDateTime(report.generatedAt) : '-'}
                       </td>
                       <td className="px-4 py-2">
-                        {report.status === 'failed' && (
+                        {(report.status === 'failed' || report.status === 'generated') && (
                           <button
                             type="button"
                             onClick={() =>
-                              handleRegenerate(report.userId, report.user.email)
+                              handleRegenerate(report.userId, report.user.email, report.status)
                             }
                             disabled={generating}
                             className="rounded border border-indigo-200 bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
