@@ -1,16 +1,58 @@
+/** @file
+ * ユーザー自身の許可ステータスに応じて警告バナーを表示するコンポーネント。
+ * 機能：pending/revoked/not-found 時にバナー表示、active・未ログインでは非表示。
+ * 入力：なし（内部で Supabase セッション + allowed_email を参照）。
+ * 出力：条件付き警告バナー UI。
+ * 依存：useMyAllowlistStatus フック、Supabase Browser Client。
+ * セキュリティ：クライアント側のみ。セッション有無で不要なクエリを抑制。
+ */
+
 'use client'
+
+import { useEffect, useState } from 'react'
 
 import { useMyAllowlistStatus } from '../hooks/useMyAllowlistStatus'
 
+import { getSupabaseBrowserClient } from '@shared/lib/supabaseClient'
+
 /**
- * ユーザー自身の許可ステータスに応じて警告を表示するバナー
- * 
- * - pending: 承認待ち（黄色）
- * - revoked: 利用停止（赤）
- * - not-found: 未登録（グレー）
- * - active: 表示しない
+ * 外側コンポーネント: セッション有無を先にチェックし、
+ * ログイン中の場合のみ内側（フック使用）をマウントする。
+ * これにより未ログイン時の getSession() → DB クエリを完全に抑制する。
  */
 export function AccountStatusBanner() {
+  const [hasSession, setHasSession] = useState<boolean | null>(null)
+
+  useEffect(() => {
+    let mounted = true
+    const supabase = getSupabaseBrowserClient()
+
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (mounted) setHasSession(!!session)
+    })
+
+    // セッション変化を監視し、ログアウト時にバナーを非表示にする
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (mounted) setHasSession(!!session)
+    })
+
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [])
+
+  // セッション確認中、または未ログイン時は何も表示しない
+  if (!hasSession) return null
+
+  return <AccountStatusBannerInner />
+}
+
+/**
+ * 内側コンポーネント: ログイン済みの場合のみマウントされる。
+ * useMyAllowlistStatus フックを使用してステータスを取得・表示する。
+ */
+function AccountStatusBannerInner() {
   const { status, loading } = useMyAllowlistStatus()
 
   // 読み込み中、または正常(active)の場合は何も表示しない
@@ -53,7 +95,7 @@ export function AccountStatusBanner() {
         <div className="flex-shrink-0 pt-0.5 md:pt-0">
           <StatusIcon status={status} />
         </div>
-        
+
         {/* テキスト部分 */}
         <div className="flex-1 md:flex md:justify-between md:gap-4">
           <div>
@@ -64,10 +106,10 @@ export function AccountStatusBanner() {
               {current.message}
             </p>
           </div>
-          
+
           {/* お問い合わせリンク（共通） */}
           <div className="mt-2 text-sm md:mt-0 md:whitespace-nowrap">
-            <a 
+            <a
               href="mailto:support@example.com" // 実際の連絡先に変更してください
               className={`underline hover:no-underline ${current.textColor}`}
             >
