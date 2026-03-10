@@ -1,0 +1,15 @@
+{
+    "project": {
+        "name": "塾向けAIチャットボット（marubo_ai）",
+        "description": "中高生対象の塾向けAIチャットボット（β版）"
+    },
+    "inputPaths": {
+        "sourceDir": "../../",
+        "sourceDescription": "プロジェクトルートの docs/ ディレクトリ（テンプレートからの相対パス ../../）",
+        "sourceAbsolute": "docs/",
+        "excludeFromSource": ["docs/UAT/"],
+        "rootDir": "./01-inputs",
+        "businessListPattern": "機能一覧表.md"
+    },
+    "coverageTarget": 100
+}
