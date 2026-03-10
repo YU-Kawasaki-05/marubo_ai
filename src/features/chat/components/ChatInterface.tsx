@@ -53,7 +53,7 @@ function ChatSession({
   // 画像添付フック
   const attachments = useImageAttachments(token)
 
-  const { messages, sendMessage, status, setMessages } = useChat({
+  const { messages, sendMessage, status, setMessages, stop } = useChat({
     // api: '/api/chat', // デフォルト
     onError: (error) => {
       console.error('Chat API Error:', error)
@@ -261,10 +261,18 @@ function ChatSession({
         ))}
 
         {isLoading && (
-          <div className="flex justify-start">
+          <div className="flex items-center gap-2 justify-start">
             <div className="bg-gray-100 rounded-lg p-3 text-gray-500 animate-pulse text-sm">
               AIが考え中...
             </div>
+            <button
+              type="button"
+              onClick={stop}
+              className="rounded-lg bg-red-50 border border-red-200 px-3 py-1.5 text-xs font-medium text-red-700 hover:bg-red-100 transition-colors"
+              aria-label="回答の生成を停止"
+            >
+              停止
+            </button>
           </div>
         )}
 
