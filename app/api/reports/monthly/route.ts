@@ -17,7 +17,11 @@ import {
   type GenerateReportPayload,
 } from '../../../../src/shared/lib/monthlyReport'
 import { notifyError } from '../../../../src/shared/lib/notifier'
-import { getStaffReportList, getStudentReport } from '../../../../src/shared/lib/reportRead'
+import {
+  getStaffReportDetail,
+  getStaffReportList,
+  getStudentReport,
+} from '../../../../src/shared/lib/reportRead'
 import { generateRequestId, parseJsonBody } from '../../../../src/shared/lib/request'
 import { requireAuth } from '../../../../src/shared/lib/requireAuth'
 import { requireStaff } from '../../../../src/shared/lib/requireStaff'
@@ -52,6 +56,14 @@ export async function GET(request: Request) {
 
     if (auth.role === 'staff') {
       const userId = url.searchParams.get('userId') ?? undefined
+      const detail = url.searchParams.get('detail')
+
+      // detail=true + userId → 個別レポート（content 含む）を返す
+      if (detail === 'true' && userId) {
+        const data = await getStaffReportDetail(month, userId)
+        return jsonResponse(requestId, data)
+      }
+
       const page = parseInt(url.searchParams.get('page') ?? '1', 10)
       const limit = parseInt(url.searchParams.get('limit') ?? '20', 10)
 
