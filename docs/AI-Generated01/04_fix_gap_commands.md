@@ -91,6 +91,7 @@
 | GFX-24 | GAP-24 | 生成済みレポート再生成対応 | Backlog |
 | GFX-25 | GAP-27 | ストリーム中断/キャンセル機能 | Backlog |
 | GFX-26 | GAP-28 | スタッフ用レポート閲覧パネル実装 | Backlog |
+| GFX-27 | GAP-10 (残作業) | スタッフログイン後のリダイレクト先修正 | Hotfix |
 
 ---
 
@@ -1466,6 +1467,45 @@ Acceptance Criteria (Done)
 
 ---
 
+## GFX-27: GAP-10 残作業（スタッフログイン後のリダイレクト先修正）
+
+```text
+[Task Title]
+GAP-10 残作業: スタッフログイン後のリダイレクト先を /admin/allowlist → /admin に修正
+
+Goal
+- GFX-11 で /admin ダッシュボード（4 カードリンク）を実装済みだが、
+  ログイン後のルーティング先が /admin/allowlist のまま更新されていない。
+  設計書（architecture.md, acceptance.md T-12）および UAT 仕様書（TC_A_002）は
+  スタッフログイン後に /admin（ダッシュボード）へリダイレクトされることを期待している。
+  この取りこぼしを修正する。
+
+Context
+- 参照: architecture.md（「スタッフ→/admin」）, acceptance.md T-12, UAT仕様書 TC_A_002
+- 現在のコード: app/login/page.tsx:70 → router.push('/admin/allowlist')
+- GFX-11 で app/admin/page.tsx（ダッシュボード）は作成済み
+- ファイルヘッダコメント（login/page.tsx:5）にも '/admin/allowlist' と記載されている
+
+Scope
+- 変更OK:
+  - app/login/page.tsx（router.push の引数 + ファイルヘッダコメント）
+- 変更NG:
+  - app/admin/page.tsx（ダッシュボード自体は変更不要）
+  - ミドルウェアやその他の認証フロー
+
+Steps
+1. app/login/page.tsx:70 の `router.push('/admin/allowlist')` を `router.push('/admin')` に変更
+2. app/login/page.tsx:5 のファイルヘッダコメントを `staff → /admin` に修正
+3. 既存テストがあれば修正（ルーティング先の文字列を検証しているテストがないか確認）
+
+Acceptance Criteria (Done)
+- [ ] app/login/page.tsx でスタッフログイン時に router.push('/admin') が呼ばれる
+- [ ] ファイルヘッダコメントが '/admin' に更新されている
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
 ## 4. 実装ロードマップサマリー
 
 ```
@@ -1482,6 +1522,9 @@ Sprint 3 (1-2週間): GFX-09, GFX-10, GFX-11, GFX-12 (すべて並列可)
 
 Sprint 4 (1-2週間): GFX-13, GFX-14, GFX-15, GFX-16, GFX-17, GFX-18
   → パフォーマンス + セキュリティの堅牢化
+
+Hotfix: GFX-27
+  → GFX-11 の取りこぼし修正（1 行変更、即時対応推奨）
 
 Backlog: GFX-19, GFX-20, GFX-21, GFX-22, GFX-23, GFX-24, GFX-25, GFX-26
   → 優先度に応じて順次対応
