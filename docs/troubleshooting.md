@@ -392,6 +392,28 @@ pnpm typecheck
 
 ---
 
+## スタッフログイン時に /admin ではなく /chat にリダイレクトされる
+
+### 症状
+
+* `app_metadata.role = 'staff'` 設定済み、`/api/sync-user` も `role: "staff"` を返すのに `/chat` に飛ぶ
+* 手動で `/admin` にアクセスすると正常に表示される
+
+### 原因
+
+`/api/sync-user` のレスポンスは `{ requestId, data: { role: "staff" } }` というネスト構造。
+`app/login/page.tsx` で `data.role`（undefined）を参照していた。正しくは `body.data?.role`。
+
+### 解決方法
+
+`app/login/page.tsx` の sync-user レスポンス解析で `body.data?.role` を参照するよう修正（2026-03-11 修正済み）。
+
+### 教訓
+
+`jsonResponse(requestId, payload)` ヘルパーは `{ requestId, data: payload }` にラップする。クライアント側では `body.data.xxx` でアクセスすること。
+
+---
+
 ## 関連ドキュメント
 
 * [RLS ポリシー](./rls.md)
