@@ -64,6 +64,13 @@ function ChatSession({
         return
       }
 
+      // 認証エラー（401）— セッション失効として扱い signOut でモーダルを発火させる
+      if (error.message.includes('401')) {
+        const supabase = getSupabaseBrowserClient()
+        supabase.auth.signOut()
+        return
+      }
+
       // レート制限エラー（429）
       if (error.message.includes('429')) {
         setChatError('送信頻度が制限を超えました。しばらく待ってから再送信してください。')
