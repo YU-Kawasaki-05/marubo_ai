@@ -65,8 +65,8 @@ export default function LoginPage() {
         })
 
         if (res.ok) {
-          const data = await res.json()
-          if (data.role === 'staff') {
+          const body = await res.json()
+          if (body.data?.role === 'staff') {
             router.push('/admin')
           } else {
             router.push('/chat')
