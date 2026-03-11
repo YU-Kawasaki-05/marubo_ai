@@ -2,7 +2,7 @@
  * ログインページ
  * 機能: メールアドレス・パスワードでのログイン / 新規登録 / パスワードリセット導線
  * ログイン成功後、/api/sync-user の role と allowedEmailStatus に応じてルーティング先を決定
- *   - staff → /admin/allowlist
+ *   - staff → /admin
  *   - student (active) → /chat
  *   - pending → 待機メッセージ表示
  *   - revoked / not-found → エラーメッセージ表示
@@ -67,7 +67,7 @@ export default function LoginPage() {
         if (res.ok) {
           const data = await res.json()
           if (data.role === 'staff') {
-            router.push('/admin/allowlist')
+            router.push('/admin')
           } else {
             router.push('/chat')
           }
