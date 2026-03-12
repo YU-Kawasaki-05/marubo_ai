@@ -24,6 +24,8 @@ export interface ChatInterfaceProps {
   token?: string | null
   conversationId?: string | null
   onConversationCreated?: (id: string) => void
+  /** AI 応答完了後に呼ばれるコールバック（UsageBadge 更新トリガー等） */
+  onMessageComplete?: () => void
 }
 
 /**
@@ -35,12 +37,14 @@ function ChatSession({
   initialMessages = [],
   conversationId,
   onConversationCreated,
+  onMessageComplete,
   attachmentsByMessageId = {},
 }: {
   token: string // 必須
   initialMessages?: UIMessage[]
   conversationId?: string | null
   onConversationCreated?: (id: string) => void
+  onMessageComplete?: () => void
   attachmentsByMessageId?: Record<string, MessageAttachment[]>
 }) {
   // Vercel AI SDK の useChat (v6系) は input 管理を提供しないため、自前で管理する
@@ -191,6 +195,11 @@ function ChatSession({
 
       // アップロード完了後にプレビューをクリア
       attachments.clearAll()
+
+      // UsageBadge 更新トリガー（サーバー側 incrementUsage との遅延を考慮し 1s 後に発火）
+      if (onMessageComplete) {
+        setTimeout(onMessageComplete, 1000)
+      }
 
       // sendMessage 完了後、最新の会話一覧を取得して
       // 新しく作成された会話のIDを親に通知する
@@ -388,10 +397,12 @@ function ChatLoader({
   token,
   conversationId,
   onConversationCreated,
+  onMessageComplete,
 }: {
   token: string
   conversationId?: string | null
   onConversationCreated?: (id: string) => void
+  onMessageComplete?: () => void
 }) {
   const [messages, setMessages] = useState<UIMessage[]>([])
   const [attachmentsMap, setAttachmentsMap] = useState<Record<string, MessageAttachment[]>>({})
@@ -454,6 +465,7 @@ function ChatLoader({
       initialMessages={messages}
       conversationId={conversationId}
       onConversationCreated={onConversationCreated}
+      onMessageComplete={onMessageComplete}
       attachmentsByMessageId={attachmentsMap}
     />
   )
@@ -462,10 +474,11 @@ function ChatLoader({
 /**
  * メインコンポーネント: 認証状態を管理するためのラッパー
  */
-export function ChatInterface({ 
-  token: externalToken, 
-  conversationId, 
-  onConversationCreated 
+export function ChatInterface({
+  token: externalToken,
+  conversationId,
+  onConversationCreated,
+  onMessageComplete,
 }: ChatInterfaceProps) {
   const [internalToken, setInternalToken] = useState<string | null>(null)
   const [isAuthChecking, setIsAuthChecking] = useState(!externalToken)
@@ -515,10 +528,11 @@ export function ChatInterface({
 
   // トークンがある場合のみ Loader コンポーネントをマウント
   return (
-    <ChatLoader 
-      token={activeToken} 
-      conversationId={conversationId} 
+    <ChatLoader
+      token={activeToken}
+      conversationId={conversationId}
       onConversationCreated={onConversationCreated}
+      onMessageComplete={onMessageComplete}
     />
   )
 }
