@@ -20,6 +20,8 @@ export default function ChatPage() {
 
   // サイドバーを強制的に再レンダリングするためのキー（新規会話作成時などに更新）
   const [sidebarKey, setSidebarKey] = useState(0)
+  // UsageBadge の再取得トリガー
+  const [usageRefreshKey, setUsageRefreshKey] = useState(0)
   // モバイルドロワーの開閉状態
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
 
@@ -103,7 +105,7 @@ export default function ChatPage() {
             </span>
           </div>
           <div className="flex items-center gap-4">
-            {token && <UsageBadge token={token} />}
+            {token && <UsageBadge token={token} refreshKey={usageRefreshKey} />}
             <Link
               href="/reports"
               className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
@@ -173,10 +175,11 @@ export default function ChatPage() {
           )}
 
           <main className="flex-1 overflow-hidden relative flex flex-col">
-            <ChatInterface 
-              token={token} 
+            <ChatInterface
+              token={token}
               conversationId={selectedId || null}
               onConversationCreated={handleConversationCreated}
+              onMessageComplete={() => setUsageRefreshKey((k) => k + 1)}
             />
           </main>
         </div>

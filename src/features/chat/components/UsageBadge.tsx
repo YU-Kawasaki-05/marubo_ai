@@ -17,9 +17,11 @@ type UsageData = {
 
 type UsageBadgeProps = {
   token: string
+  /** 値が変わるたびに /api/usage を再取得する。チャット送信完了後の更新用。 */
+  refreshKey?: number
 }
 
-export function UsageBadge({ token }: UsageBadgeProps) {
+export function UsageBadge({ token, refreshKey = 0 }: UsageBadgeProps) {
   const [usage, setUsage] = useState<UsageData | null>(null)
 
   const fetchUsage = useCallback(async () => {
@@ -37,7 +39,7 @@ export function UsageBadge({ token }: UsageBadgeProps) {
 
   useEffect(() => {
     fetchUsage()
-  }, [fetchUsage])
+  }, [fetchUsage, refreshKey])
 
   if (!usage) return null
 
