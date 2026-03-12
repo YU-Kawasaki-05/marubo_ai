@@ -92,6 +92,7 @@
 | GFX-25 | GAP-27 | ストリーム中断/キャンセル機能 | Backlog |
 | GFX-26 | GAP-28 | スタッフ用レポート閲覧パネル実装 | Backlog |
 | GFX-27 | GAP-10 (残作業) | スタッフログイン後のリダイレクト先修正 | Hotfix |
+| GFX-28 | (新規) | UsageBadge のリアルタイム更新 | Hotfix |
 
 ---
 
@@ -1506,6 +1507,65 @@ Acceptance Criteria (Done)
 
 ---
 
+## GFX-28: UsageBadge のリアルタイム更新（チャット送信後に残り質問数が反映されない）
+
+```text
+[Task Title]
+UsageBadge: チャット送信後に残り質問数をリアルタイム更新する
+
+Goal
+- 生徒がチャットを送信した後、ヘッダーの「残り X/Y」バッジがページリロードなしで
+  更新されるようにする。現状は UsageBadge がマウント時に 1 回だけ /api/usage を
+  fetch しており、POST /api/chat 完了後に再取得するトリガーがない。
+
+Context
+- UsageBadge.tsx:38-40 の useEffect は [fetchUsage] のみを依存配列に持ち、初回のみ実行
+- app/api/chat/route.ts:190 の onFinish で incrementUsage() を呼び DB は正しく更新される
+- しかしフロントエンド側に再取得の通知がないため画面に反映されない
+- F5 リロードすれば正しい値が表示される（DB 側の問題ではなくフロント側の問題）
+- UAT 仕様書 TC_B_010 で「質問送信後に残り質問数が 1 減っている」が期待されている
+
+Scope
+- 変更OK:
+  - src/features/chat/components/UsageBadge.tsx（refresh トリガー追加）
+  - src/features/chat/components/ChatInterface.tsx（送信完了時のコールバック通知）
+  - app/chat/page.tsx（UsageBadge と ChatInterface の接続）
+- 変更NG:
+  - app/api/chat/route.ts（バックエンドの incrementUsage ロジックは正常）
+  - app/api/usage/route.ts（API 自体は正常）
+  - src/shared/lib/rateLimit.ts（DB 更新ロジックは正常）
+
+Implementation Hints
+- 方針 A（推奨: コールバック方式）:
+  1. UsageBadge に refresh() を公開する方法:
+     - UsageBadge に `refreshKey` (number) props を追加
+     - useEffect の依存配列に refreshKey を含め、変わるたびに /api/usage を再 fetch
+  2. ChatInterface に `onMessageComplete` コールバック props を追加
+     - AI ストリーム完了後（onFinish 相当のタイミング）にコールバックを呼ぶ
+     - 注意: incrementUsage は onFinish（サーバー側）で実行されるので、
+       クライアント側の完了検知と若干のタイミング差がある。
+       ストリーム終了後に 500ms〜1s の遅延を入れてから fetch すると確実
+  3. app/chat/page.tsx で接続:
+     ```tsx
+     const [usageRefreshKey, setUsageRefreshKey] = useState(0)
+     <UsageBadge token={token} refreshKey={usageRefreshKey} />
+     <ChatInterface
+       onMessageComplete={() => setTimeout(() => setUsageRefreshKey(k => k + 1), 1000)}
+     />
+     ```
+- 方針 B（ポーリング方式 — シンプルだが非推奨）:
+  - UsageBadge 内に setInterval(fetchUsage, 30000) を追加
+  - 30秒ごとに自動更新 → 不要なリクエストが発生するためコスト面で非推奨
+
+Acceptance Criteria (Done)
+- [ ] チャット送信 → AI 応答完了後、ページリロードなしで UsageBadge の数値が更新される
+- [ ] 初回マウント時の表示は従来通り正常に動作する
+- [ ] 不要なポーリングや過剰な API コールが発生しない
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
 ## 4. 実装ロードマップサマリー
 
 ```
@@ -1523,8 +1583,9 @@ Sprint 3 (1-2週間): GFX-09, GFX-10, GFX-11, GFX-12 (すべて並列可)
 Sprint 4 (1-2週間): GFX-13, GFX-14, GFX-15, GFX-16, GFX-17, GFX-18
   → パフォーマンス + セキュリティの堅牢化
 
-Hotfix: GFX-27
-  → GFX-11 の取りこぼし修正（1 行変更、即時対応推奨）
+Hotfix: GFX-27, GFX-28
+  → GFX-27: ログインリダイレクト先修正（1 行変更）
+  → GFX-28: UsageBadge リアルタイム更新（UAT TC_B_010 対応）
 
 Backlog: GFX-19, GFX-20, GFX-21, GFX-22, GFX-23, GFX-24, GFX-25, GFX-26
   → 優先度に応じて順次対応
