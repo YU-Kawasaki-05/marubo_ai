@@ -53,7 +53,7 @@ class MockQuery implements PromiseLike<{ data: Array<Record<string, unknown>> | 
     rows.forEach((row) => {
       mockState.seq += 1
       const createdAt = row.created_at ?? new Date(1700000000000 + mockState.seq * 1000).toISOString()
-      tableData.push({ ...row, created_at: createdAt })
+      tableData.push({ ...row, created_at: createdAt, seq: mockState.seq })
     })
     return Promise.resolve({ data: null, error: null })
   }
@@ -343,6 +343,125 @@ describe('chat conversations integration', () => {
     const assistantMsg = detailMessages.find((m) => m.role === 'assistant')
     expect(assistantMsg).toBeTruthy()
     expect(assistantMsg!.attachments).toEqual([])
+  })
+
+  it('appends messages to existing conversation when conversationId is provided', async () => {
+    // 1通目: 新規会話を作成
+    const chatRes1 = await chatPost(
+      new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer student-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: '最初の質問' }] }],
+        }),
+      }),
+    )
+    expect(chatRes1.status).toBe(200)
+    const conversationId = chatRes1.headers.get('x-conversation-id')
+    expect(conversationId).toBeTruthy()
+    expect(mockState.conversations).toHaveLength(1)
+
+    // 2通目: 既存会話に追記
+    const chatRes2 = await chatPost(
+      new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer student-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [
+            { id: 'm1', role: 'user', parts: [{ type: 'text', text: '最初の質問' }] },
+            { id: 'm2', role: 'assistant', parts: [{ type: 'text', text: 'AI mock answer' }] },
+            { id: 'm3', role: 'user', parts: [{ type: 'text', text: '続きの質問' }] },
+          ],
+          conversationId,
+        }),
+      }),
+    )
+    expect(chatRes2.status).toBe(200)
+
+    // conversations テーブルには新しい行が作られていないこと
+    expect(mockState.conversations).toHaveLength(1)
+    expect(mockState.conversations[0].id).toBe(conversationId)
+
+    // messages テーブルに 4 件（user+assistant x2）
+    const convMessages = mockState.messages.filter((m) => m.conversation_id === conversationId)
+    expect(convMessages).toHaveLength(4)
+
+    // 会話詳細 API で全メッセージが返ること
+    const detailRes = await conversationDetailGet(
+      new Request(`http://localhost/api/conversations/${conversationId}`, {
+        method: 'GET',
+        headers: { Authorization: 'Bearer student-token' },
+      }),
+      { params: { id: conversationId! } },
+    )
+    const detailBody = await parseJson(detailRes)
+    expect(detailRes.status).toBe(200)
+    const msgs = (detailBody.data as { messages: Array<{ role: string; content: string }> }).messages
+    expect(msgs).toHaveLength(4)
+    expect(msgs[0]).toMatchObject({ role: 'user', content: '最初の質問' })
+    expect(msgs[1]).toMatchObject({ role: 'assistant', content: 'AI mock answer' })
+    expect(msgs[2]).toMatchObject({ role: 'user', content: '続きの質問' })
+    expect(msgs[3]).toMatchObject({ role: 'assistant', content: 'AI mock answer' })
+  })
+
+  it('returns 404 when conversationId belongs to another user', async () => {
+    // 別ユーザーの会話を直接 mockState に挿入
+    mockState.conversations.push({
+      id: 'other-user-conv',
+      user_id: 'other-user-id',
+      title: '他人の会話',
+      created_at: new Date().toISOString(),
+    })
+
+    const chatRes = await chatPost(
+      new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer student-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: '不正アクセス' }] }],
+          conversationId: 'other-user-conv',
+        }),
+      }),
+    )
+    expect(chatRes.status).toBe(404)
+    const body = await parseJson(chatRes)
+    expect(body.error).toContain('会話が見つかりません')
+  })
+
+  it('preserves message ordering via seq (user before assistant)', async () => {
+    const chatRes = await chatPost(
+      new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer student-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: '順序テスト' }] }],
+        }),
+      }),
+    )
+    expect(chatRes.status).toBe(200)
+    const conversationId = chatRes.headers.get('x-conversation-id')
+
+    const convMessages = mockState.messages.filter((m) => m.conversation_id === conversationId)
+    expect(convMessages).toHaveLength(2)
+
+    const userMsg = convMessages.find((m) => m.role === 'user')
+    const assistantMsg = convMessages.find((m) => m.role === 'assistant')
+    expect(userMsg).toBeTruthy()
+    expect(assistantMsg).toBeTruthy()
+    // user の seq が assistant の seq より小さいこと
+    expect((userMsg!.seq as number)).toBeLessThan(assistantMsg!.seq as number)
   })
 
   it('handles chat without attachments (backward compatibility)', async () => {

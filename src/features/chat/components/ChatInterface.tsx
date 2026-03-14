@@ -182,15 +182,21 @@ function ChatSession({
 
       // sendMessage を使ってメッセージを追加・送信
       // headers はここで渡す（認証トークンを API に送る）
+      // body に conversationId を含めることで、サーバー側で既存会話への追記が可能
+      const bodyPayload: Record<string, unknown> = {}
+      if (conversationId) {
+        bodyPayload.conversationId = conversationId
+      }
+      if (attachmentMeta.length > 0) {
+        bodyPayload.attachments = attachmentMeta
+      }
       await sendMessage({
         text: userMessage,
       }, {
         headers: {
           'Authorization': `Bearer ${token}`,
         },
-        body: attachmentMeta.length > 0
-          ? { attachments: attachmentMeta }
-          : undefined,
+        body: Object.keys(bodyPayload).length > 0 ? bodyPayload : undefined,
       })
 
       // アップロード完了後にプレビューをクリア

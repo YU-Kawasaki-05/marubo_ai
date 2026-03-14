@@ -5,7 +5,7 @@
  *   分間レート制限（10 req/min）と月間クォータ（100 問/月）を適用。
  *   添付枚数（3枚）・メッセージ文字数（2000文字）のサーバーサイドバリデーション。
  *   会話保存後に LLM（gpt-4o-mini）で20文字以内のタイトルを非同期生成。
- * 入力：JSON { messages: UIMessage[], attachments?: { storagePath, mimeType, size }[] }
+ * 入力：JSON { messages: UIMessage[], attachments?: { storagePath, mimeType, size }[], conversationId?: string }
  * 出力：Streaming Text Response
  * 依存：Vercel AI SDK, OpenAI, Supabase Auth, rateLimit
  * セキュリティ：ログイン済みユーザーのみ実行可能。レート制限で過剰利用を防止。
@@ -84,6 +84,7 @@ export async function POST(req: Request) {
     const requestBody = (await req.json()) as {
       messages?: UIMessageWithLegacyContent[]
       attachments?: AttachmentInput[]
+      conversationId?: string
     }
     const uiMessages = requestBody.messages ?? []
     const attachmentInputs = requestBody.attachments ?? []
@@ -109,7 +110,23 @@ export async function POST(req: Request) {
     const messages = await convertSafeMessages(uiMessages)
 
     const supabaseAdmin = getSupabaseAdminClient()
-    const conversationId = crypto.randomUUID()
+    const isNewConversation = !requestBody.conversationId
+    const conversationId = requestBody.conversationId ?? crypto.randomUUID()
+
+    // 既存会話への追記時: オーナーチェック（他人の会話への追記を防止）
+    if (!isNewConversation) {
+      const { data: conv } = await supabaseAdmin
+        .from('conversations')
+        .select('user_id')
+        .eq('id', conversationId)
+        .single()
+      if (!conv || conv.user_id !== user.id) {
+        return new Response(
+          JSON.stringify({ error: '会話が見つかりません' }),
+          { status: 404, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+    }
 
     const lastUserMessage = [...uiMessages]
       .reverse()
@@ -147,31 +164,32 @@ export async function POST(req: Request) {
               .join('') ??
             ''
 
-          // conversations を作成
-          await supabaseAdmin.from('conversations').insert({
-            id: conversationId,
-            user_id: user.id,
-            title: makeTitle(),
-          })
+          // 新規会話のみ conversations を作成（既存会話への追記時はスキップ）
+          if (isNewConversation) {
+            await supabaseAdmin.from('conversations').insert({
+              id: conversationId,
+              user_id: user.id,
+              title: makeTitle(),
+            })
+          }
 
           // 最新のユーザーメッセージ + AI 応答を保存
+          // 個別 INSERT で seq（BIGSERIAL）の採番順を保証する
           const userMessageId = crypto.randomUUID()
-          const rows: { id: string; conversation_id: string; role: 'user' | 'assistant'; content: string }[] = []
           if (userText) {
-            rows.push({
+            await supabaseAdmin.from('messages').insert({
               id: userMessageId,
               conversation_id: conversationId,
               role: 'user' as const,
               content: userText,
             })
           }
-          rows.push({
+          await supabaseAdmin.from('messages').insert({
             id: crypto.randomUUID(),
             conversation_id: conversationId,
             role: 'assistant' as const,
             content: assistantText,
           })
-          await supabaseAdmin.from('messages').insert(rows)
 
           // 添付画像がある場合は attachments テーブルに保存
           if (attachmentInputs.length > 0 && userText) {
@@ -189,8 +207,8 @@ export async function POST(req: Request) {
           // 利用カウンタを +1（月間クォータ管理用）
           await incrementUsage(appUserId)
 
-          // LLM でタイトルを非同期生成（失敗しても既存タイトルが残る）
-          if (userText && assistantText) {
+          // LLM でタイトルを非同期生成（新規会話のみ。失敗しても既存タイトルが残る）
+          if (isNewConversation && userText && assistantText) {
             void (async () => {
               try {
                 const titleResult = await generateText({

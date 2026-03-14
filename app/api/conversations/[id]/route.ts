@@ -56,13 +56,12 @@ export async function GET(
       return NextResponse.json({ error: 'Not found' }, { status: 404 })
     }
 
-    // メッセージ一覧取得（昇順）
+    // メッセージ一覧取得（seq 昇順 — INSERT 順で時系列を保証）
     const { data: messages, error: msgError } = await supabase
       .from('messages')
       .select('id, role, content, created_at')
       .eq('conversation_id', conversationId)
-      .order('created_at', { ascending: true })
-      .order('id', { ascending: true })
+      .order('seq', { ascending: true })
 
     if (msgError) {
       console.error('Fetch messages error:', msgError)
