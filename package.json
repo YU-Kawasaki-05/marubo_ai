@@ -22,6 +22,7 @@
     "@supabase/supabase-js": "^2.45.0",
     "ai": "^6.0.33",
     "encoding-japanese": "^2.2.0",
+    "heic2any": "^0.0.4",
     "katex": "^0.16.10",
     "next": "^14.2.35",
     "react": "^18.3.1",

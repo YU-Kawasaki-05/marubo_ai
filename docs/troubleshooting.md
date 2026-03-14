@@ -144,7 +144,7 @@ JWT をデコードして `app_metadata.role` が想定（`student` or `staff`�
 
 | 項目 | 制約 |
 |------|------|
-| **対応形式** | JPEG / PNG / WebP のみ（`ALLOWED_MIME_TYPES`） |
+| **対応形式** | JPEG / PNG / WebP（HEIC/HEIF はクライアント側で JPEG に自動変換） |
 | **最大サイズ** | 5 MB / 枚（`MAX_FILE_SIZE_BYTES`） |
 | **最大枚数** | 3 枚 / メッセージ（`MAX_ATTACHMENTS_PER_MESSAGE`） |
 | **署名 URL 有効期限** | アップロード用: 60 秒 / 表示用: 600 秒（10 分） |

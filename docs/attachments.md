@@ -13,7 +13,8 @@
 | PNG | `image/png` | スクリーンショット・図表に適する |
 | WebP | `image/webp` | 高圧縮率。モダンブラウザで対応済み |
 
-**非対応**: GIF（アニメーション不要）、HEIC（ブラウザ互換性）、SVG（XSS リスク）、PDF
+**非対応**: GIF（アニメーション不要）、SVG（XSS リスク）、PDF
+**自動変換**: HEIC/HEIF（クライアント側で JPEG に変換後アップロード）
 
 ---
 
@@ -134,7 +135,7 @@ CREATE TABLE IF NOT EXISTS attachments (
 
 | エラー | HTTP | メッセージ（UI 表示） |
 |--------|------|----------------------|
-| 非対応フォーマット | 400 | 「対応している画像形式は JPEG / PNG / WebP です」 |
+| 非対応フォーマット | 400 | 「対応している画像形式は JPEG / PNG / WebP です」（※ HEIC/HEIF はクライアント側で自動変換されるためエラーにならない） |
 | ファイルサイズ超過 | 400 | 「画像は 1 枚あたり 5MB 以下にしてください」 |
 | 添付枚数超過 | 400 | 「1 回の送信で添付できる画像は 3 枚までです」 |
 | 添付枚数超過（サーバー） | 400 | `TOO_MANY_ATTACHMENTS` — サーバーサイドでも `attachments.length > 3` を検証（GFX-15） |
@@ -148,7 +149,7 @@ CREATE TABLE IF NOT EXISTS attachments (
 
 ### 添付操作
 - メッセージ入力欄の横に **📎（クリップ）アイコン** を配置
-- クリックでファイル選択ダイアログを表示（`accept="image/jpeg,image/png,image/webp"`）
+- クリックでファイル選択ダイアログを表示（`accept="image/jpeg,image/png,image/webp,image/heic,image/heif"`）
 - ドラッグ & ドロップにも対応
 
 ### プレビュー

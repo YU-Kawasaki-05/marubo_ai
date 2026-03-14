@@ -349,7 +349,7 @@ function ChatSession({
             type="button"
             onClick={attachments.openFilePicker}
             className="p-3 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition-colors"
-            disabled={isLoading || attachments.isUploading}
+            disabled={isLoading || attachments.isUploading || attachments.isConverting}
             title="画像を添付"
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -364,15 +364,15 @@ function ChatSession({
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             placeholder="メッセージを入力..."
-            disabled={isLoading || attachments.isUploading}
+            disabled={isLoading || attachments.isUploading || attachments.isConverting}
             rows={1}
           />
           <button
             type="submit"
             className="px-6 py-2 bg-blue-600 text-white font-medium rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors shadow-sm"
-            disabled={isLoading || attachments.isUploading || isOverLimit || (!input?.trim() && attachments.items.length === 0)}
+            disabled={isLoading || attachments.isUploading || attachments.isConverting || isOverLimit || (!input?.trim() && attachments.items.length === 0)}
           >
-            {attachments.isUploading ? '送信中...' : '送信'}
+            {attachments.isConverting ? '変換中...' : attachments.isUploading ? '送信中...' : '送信'}
           </button>
         </form>
         {input.length > MAX_MESSAGE_LENGTH * 0.8 && (

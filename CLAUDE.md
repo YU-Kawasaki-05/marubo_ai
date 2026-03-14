@@ -55,6 +55,9 @@
 
 ### バリデーション定数（`src/shared/lib/attachmentValidation.ts`）
 - `ALLOWED_MIME_TYPES`: image/jpeg, image/png, image/webp
+- `CONVERTIBLE_MIME_TYPES`: image/heic, image/heif（クライアント側で JPEG に自動変換）
+- `INPUT_ACCEPT_TYPES`: ALLOWED + CONVERTIBLE を結合した accept 属性用文字列
+- `HEIC_CONVERSION_QUALITY`: 0.85（HEIC→JPEG 変換品質）
 - `MAX_FILE_SIZE_BYTES`: 5MB
 - `MAX_ATTACHMENTS_PER_MESSAGE`: 3
 - `SIGNED_URL_EXPIRES_IN`: 60秒（アップロード用）

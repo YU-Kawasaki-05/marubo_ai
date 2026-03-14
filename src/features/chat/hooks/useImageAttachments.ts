@@ -1,7 +1,8 @@
 /** @file
  * 画像添付を管理するカスタムフック。
  * 機能：ファイル選択・バリデーション・プレビューURL管理・署名URLアップロード・削除
- * 依存：attachmentValidation（共有定数）
+ *   HEIC/HEIF ファイルはクライアント側で JPEG に自動変換してから処理する。
+ * 依存：attachmentValidation（共有定数）, heic2any（HEIC→JPEG 変換、dynamic import）
  * セキュリティ：MIME タイプ・サイズ・枚数をクライアント側でも検証。
  */
 
@@ -11,6 +12,9 @@ import { useCallback, useRef, useState } from 'react'
 
 import {
   ALLOWED_MIME_TYPES,
+  CONVERTIBLE_MIME_TYPES,
+  HEIC_CONVERSION_QUALITY,
+  INPUT_ACCEPT_TYPES,
   MAX_ATTACHMENTS_PER_MESSAGE,
   MAX_FILE_SIZE_BYTES,
 } from '@shared/lib/attachmentValidation'
@@ -22,8 +26,8 @@ export type AttachmentItem = {
   previewUrl: string
   /** アップロード完了後に設定される Storage パス */
   storagePath: string | null
-  /** 'pending' | 'uploading' | 'done' | 'error' */
-  status: 'pending' | 'uploading' | 'done' | 'error'
+  /** 'converting' | 'pending' | 'uploading' | 'done' | 'error' */
+  status: 'converting' | 'pending' | 'uploading' | 'done' | 'error'
   error?: string
 }
 
@@ -34,20 +38,39 @@ export type AttachmentMeta = {
   size: number
 }
 
-const ACCEPT = ALLOWED_MIME_TYPES.join(',')
-
 function generateId() {
   return crypto.randomUUID()
 }
 
+/** ファイルが HEIC/HEIF（変換対象）かどうか判定する */
+function isConvertibleFile(file: File): boolean {
+  return (CONVERTIBLE_MIME_TYPES as readonly string[]).includes(file.type)
+}
+
 function validateFile(file: File): string | null {
-  if (!(ALLOWED_MIME_TYPES as readonly string[]).includes(file.type)) {
+  const convertible = isConvertibleFile(file)
+  if (!convertible && !(ALLOWED_MIME_TYPES as readonly string[]).includes(file.type)) {
     return '対応している画像形式は JPEG / PNG / WebP です。'
   }
-  if (file.size > MAX_FILE_SIZE_BYTES) {
+  // HEIC は変換後にサイズが変わるため、元ファイルのサイズチェックはスキップ
+  if (!convertible && file.size > MAX_FILE_SIZE_BYTES) {
     return '画像は 1 枚あたり 5MB 以下にしてください。'
   }
   return null
+}
+
+/** HEIC/HEIF ファイルを JPEG に変換する */
+async function convertHeicToJpeg(file: File): Promise<File> {
+  const heic2any = (await import('heic2any')).default
+  const blob = await heic2any({
+    blob: file,
+    toType: 'image/jpeg',
+    quality: HEIC_CONVERSION_QUALITY,
+  })
+  // heic2any は Blob | Blob[] を返す（マルチフレームの場合配列）
+  const resultBlob = Array.isArray(blob) ? blob[0] : blob
+  const newName = file.name.replace(/\.hei[cf]$/i, '.jpg')
+  return new File([resultBlob], newName, { type: 'image/jpeg' })
 }
 
 export function useImageAttachments(token: string) {
@@ -79,20 +102,77 @@ export function useImageAttachments(token: string) {
         }
 
         const newItems: AttachmentItem[] = []
+        const heicItems: { id: string; file: File }[] = []
+
         for (const file of toAdd) {
           const error = validateFile(file)
           if (error) {
             setGlobalError(error)
             continue
           }
-          newItems.push({
-            id: generateId(),
-            file,
-            previewUrl: URL.createObjectURL(file),
-            storagePath: null,
-            status: 'pending',
-          })
+
+          const id = generateId()
+          if (isConvertibleFile(file)) {
+            // HEIC: converting 状態で追加し、非同期変換をキューに入れる
+            newItems.push({
+              id,
+              file,
+              previewUrl: '',
+              storagePath: null,
+              status: 'converting',
+            })
+            heicItems.push({ id, file })
+          } else {
+            newItems.push({
+              id,
+              file,
+              previewUrl: URL.createObjectURL(file),
+              storagePath: null,
+              status: 'pending',
+            })
+          }
         }
+
+        // HEIC 変換を非同期で実行（setItems の外で）
+        if (heicItems.length > 0) {
+          for (const { id, file } of heicItems) {
+            void convertHeicToJpeg(file)
+              .then((converted) => {
+                if (converted.size > MAX_FILE_SIZE_BYTES) {
+                  setItems((p) =>
+                    p.map((i) =>
+                      i.id === id
+                        ? { ...i, status: 'error' as const, error: '変換後のサイズが 5MB を超えました。' }
+                        : i,
+                    ),
+                  )
+                  return
+                }
+                setItems((p) =>
+                  p.map((i) =>
+                    i.id === id
+                      ? {
+                          ...i,
+                          file: converted,
+                          previewUrl: URL.createObjectURL(converted),
+                          status: 'pending' as const,
+                        }
+                      : i,
+                  ),
+                )
+              })
+              .catch(() => {
+                setItems((p) =>
+                  p.map((i) =>
+                    i.id === id
+                      ? { ...i, status: 'error' as const, error: 'HEIC の変換に失敗しました。' }
+                      : i,
+                  ),
+                )
+              })
+          }
+        }
+
         return [...prev, ...newItems]
       })
     },
@@ -220,6 +300,9 @@ export function useImageAttachments(token: string) {
   /** アップロード中かどうか */
   const isUploading = items.some((item) => item.status === 'uploading')
 
+  /** HEIC 変換中かどうか */
+  const isConverting = items.some((item) => item.status === 'converting')
+
   /** エラーがあるかどうか */
   const hasError = items.some((item) => item.status === 'error')
 
@@ -227,9 +310,10 @@ export function useImageAttachments(token: string) {
     items,
     globalError,
     isUploading,
+    isConverting,
     hasError,
     fileInputRef,
-    accept: ACCEPT,
+    accept: INPUT_ACCEPT_TYPES,
     addFiles,
     removeItem,
     clearAll,
