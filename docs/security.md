@@ -252,6 +252,7 @@ module.exports = {
 ### MIME タイプチェック
 
 * **許可**：`image/jpeg`, `image/png`, `image/webp`
+* **自動変換（クライアント側）**：`image/heic`, `image/heif` → JPEG に変換後アップロード
 * **拒否**：実行可能ファイル（`.exe`, `.sh` など）、スクリプト（`.js`, `.html` など）
 * アップロード前にクライアント側でチェックし、サーバー側でも再検証
 

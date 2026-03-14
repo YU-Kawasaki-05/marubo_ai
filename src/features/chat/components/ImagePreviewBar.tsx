@@ -31,14 +31,25 @@ export function ImagePreviewBar({ items, onRemove }: Props) {
         >
           {/* サムネイル */}
           <div className="relative w-20 h-20 rounded-lg overflow-hidden border border-gray-200 bg-gray-50">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={item.previewUrl}
-              alt={item.file.name}
-              className="w-full h-full object-cover"
-            />
+            {item.previewUrl ? (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                src={item.previewUrl}
+                alt={item.file.name}
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center bg-gray-100">
+                <span className="text-gray-400 text-xs">HEIC</span>
+              </div>
+            )}
 
             {/* ステータスオーバーレイ */}
+            {item.status === 'converting' && (
+              <div className="absolute inset-0 bg-blue-500/40 flex items-center justify-center">
+                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
             {item.status === 'uploading' && (
               <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
                 <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />

@@ -15,6 +15,21 @@ export const ALLOWED_MIME_TYPES = [
   'image/webp',
 ] as const
 
+/** クライアント側で JPEG に変換する MIME タイプ（iPhone HEIC/HEIF） */
+export const CONVERTIBLE_MIME_TYPES = [
+  'image/heic',
+  'image/heif',
+] as const
+
+/** ファイルピッカーの accept 属性に使う文字列（ALLOWED + CONVERTIBLE） */
+export const INPUT_ACCEPT_TYPES = [
+  ...ALLOWED_MIME_TYPES,
+  ...CONVERTIBLE_MIME_TYPES,
+].join(',')
+
+/** HEIC→JPEG 変換時の品質（0〜1） */
+export const HEIC_CONVERSION_QUALITY = 0.85
+
 /** MIME タイプ → 拡張子マッピング */
 const MIME_TO_EXT: Record<string, string> = {
   'image/jpeg': 'jpg',
