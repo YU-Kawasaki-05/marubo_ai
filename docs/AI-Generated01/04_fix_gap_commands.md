@@ -94,6 +94,7 @@
 | GFX-27 | GAP-10 (残作業) | スタッフログイン後のリダイレクト先修正 | Hotfix |
 | GFX-28 | (新規) | UsageBadge のリアルタイム更新 | Hotfix |
 | GFX-29 | (新規) | 会話継続・メッセージ保存・時系列の修正 | Critical |
+| GFX-30 | (新規) | HEIC/HEIF 画像のクライアント変換対応 | Sprint 5 |
 
 ---
 
@@ -1832,6 +1833,286 @@ Acceptance Criteria (Done)
 
 ---
 
+## GFX-30: HEIC/HEIF 画像のクライアント変換対応（iPhone ユーザー対応）
+
+```text
+[Task Title]
+iPhone からの HEIC/HEIF 画像添付をクライアント側で JPEG に変換して対応する
+
+Goal
+- iPhone のカメラロールから直接添付された HEIC/HEIF 画像を、
+  アップロード前にブラウザ内で JPEG に変換し、既存フローに乗せる。
+- サーバー側・Storage・表示側の変更は不要とする（クライアント完結）。
+- 日本のβ版ユーザー（中高生）の大半が iPhone ユーザーであるため、
+  HEIC 非対応は画像添付機能の利用率を大きく下げるリスクがある。
+
+Background — なぜ必要か
+- iPhone はデフォルトで HEIF/HEIC 形式で写真を保存（iOS 11〜、2017年〜）
+- 現在の ALLOWED_MIME_TYPES は image/jpeg, image/png, image/webp のみ
+  → HEIC を添付すると「対応している画像形式は JPEG / PNG / WebP です。」エラー
+- Safari(iOS) のファイルピッカーは HEIC を自動変換する場合もあるが、
+  環境やバージョンにより HEIC のまま渡されるケースがある
+- Chrome デスクトップは HEIC を <img> で表示できないため、
+  スタッフの管理画面でも閲覧不可になる
+- クライアント側で JPEG に変換すれば、Storage には常に JPEG が入り、
+  サーバー・表示側の変更が不要になる
+
+Context — 現在の実装の詳細
+
+■ ファイル選択〜バリデーション:
+  src/features/chat/hooks/useImageAttachments.ts の addFiles() (L64-100)
+  → FileList を受け取り、validateFile() で MIME + サイズをチェック
+  → ALLOWED_MIME_TYPES に含まれないファイルは拒否してエラー表示
+
+■ accept 属性:
+  useImageAttachments が返す accept = ALLOWED_MIME_TYPES.join(',')
+  → 'image/jpeg,image/png,image/webp'
+  → iPhone のファイルピッカーで HEIC ファイルが選択対象外になる場合がある
+
+■ バリデーション定数:
+  src/shared/lib/attachmentValidation.ts (L12-16)
+  → ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp']
+
+■ サーバー側バリデーション:
+  app/api/attachments/sign/route.ts (L72)
+  → assertAllowedMimeType(mimeType) で HEIC を拒否
+  → クライアント側で変換済みなら mimeType は 'image/jpeg' として送信されるため変更不要
+
+■ プレビュー表示:
+  ImagePreviewBar.tsx (L35-39)
+  → URL.createObjectURL(file) でプレビュー生成
+  → HEIC の場合、Safari では表示可能だが Chrome では表示不可
+  → 変換後の File/Blob で createObjectURL すれば全ブラウザで表示可能
+
+Scope
+- 変更OK:
+  - package.json（heic2any ライブラリ追加）
+  - src/shared/lib/attachmentValidation.ts（HEIC_MIME_TYPES 定数を追加）
+  - src/features/chat/hooks/useImageAttachments.ts（HEIC 検知→変換→従来フローに合流）
+  - src/features/chat/components/ImagePreviewBar.tsx（変換中インジケータ追加）
+  - src/features/chat/components/ChatInterface.tsx（accept 属性の更新のみ）
+  - tests/**（変換ロジックのテスト追加）
+- 変更NG:
+  - app/api/attachments/sign/route.ts（サーバー側バリデーションは変更不要）
+  - app/api/chat/route.ts（チャット API は変更不要）
+  - src/features/chat/components/MessageBubble.tsx（表示側は変更不要）
+  - Storage の設定（JPEG として保存されるので変更不要）
+
+Implementation — Step-by-Step
+
+Step 1: heic2any ライブラリを追加する
+  コマンド: pnpm add heic2any
+  補足:
+    - heic2any は約 200KB（gzip 後）。チャットページでのみ使用される
+    - TypeScript 型定義は同梱されている
+    - dynamic import で遅延読み込みし、非 HEIC ユーザーには影響なし
+
+Step 2: attachmentValidation.ts に HEIC 関連の定数を追加する
+  ファイル: src/shared/lib/attachmentValidation.ts
+
+  追加内容:
+    /** クライアント側で JPEG に変換する MIME タイプ（iPhone HEIC/HEIF） */
+    export const CONVERTIBLE_MIME_TYPES = [
+      'image/heic',
+      'image/heif',
+    ] as const
+
+    /** ファイルピッカーの accept 属性に使う文字列（ALLOWED + CONVERTIBLE） */
+    export const INPUT_ACCEPT_TYPES = [
+      ...ALLOWED_MIME_TYPES,
+      ...CONVERTIBLE_MIME_TYPES,
+    ].join(',')
+
+    /** HEIC→JPEG 変換時の品質（0〜1） */
+    export const HEIC_CONVERSION_QUALITY = 0.85
+
+  注意:
+    - ALLOWED_MIME_TYPES 自体は変更しない（サーバー側バリデーションに使われているため）
+    - CONVERTIBLE_MIME_TYPES は「変換対象として検知するための定数」
+    - INPUT_ACCEPT_TYPES はファイルピッカーの accept 属性用
+
+Step 3: useImageAttachments.ts の addFiles を改修する
+  ファイル: src/features/chat/hooks/useImageAttachments.ts
+
+  3a. HEIC 変換関数を追加:
+    /** HEIC/HEIF ファイルを JPEG に変換する */
+    async function convertHeicToJpeg(file: File): Promise<File> {
+      const heic2any = (await import('heic2any')).default
+      const blob = await heic2any({
+        blob: file,
+        toType: 'image/jpeg',
+        quality: HEIC_CONVERSION_QUALITY,
+      })
+      // heic2any は Blob | Blob[] を返す（マルチフレームの場合配列）
+      const resultBlob = Array.isArray(blob) ? blob[0] : blob
+      // 元のファイル名の拡張子を .jpg に変更
+      const newName = file.name.replace(/\.hei[cf]$/i, '.jpg')
+      return new File([resultBlob], newName, { type: 'image/jpeg' })
+    }
+
+  3b. addFiles の型と変換ロジック:
+    現在の addFiles は同期的に setItems を呼んでいるが、
+    HEIC 変換は非同期（heic2any が Promise を返す）のため、
+    addFiles を async 化するか、変換中の状態管理が必要。
+
+    推奨アプローチ:
+    1. addFiles 内で HEIC ファイルを検知
+    2. HEIC ファイルには status: 'converting' を設定して items に追加
+       （プレビュー URL は空のプレースホルダー）
+    3. 変換を非同期で実行
+    4. 変換完了後に items の該当エントリを更新
+       （file を変換後の File に差し替え、previewUrl を生成、status を 'pending' に変更）
+    5. 変換失敗時は status: 'error' に設定
+
+    AttachmentItem の status に 'converting' を追加:
+      status: 'converting' | 'pending' | 'uploading' | 'done' | 'error'
+
+  3c. validateFile の変更:
+    HEIC/HEIF の場合はバリデーションをスキップ（変換後に再検証する）:
+      function validateFile(file: File): string | null {
+        const isConvertible = (CONVERTIBLE_MIME_TYPES as readonly string[]).includes(file.type)
+        if (!isConvertible && !(ALLOWED_MIME_TYPES as readonly string[]).includes(file.type)) {
+          return '対応している画像形式は JPEG / PNG / WebP です。'
+        }
+        // HEIC の場合、変換後にサイズが増える可能性があるため、
+        // 元ファイルのサイズチェックは緩和する（変換後に再チェック）
+        if (!isConvertible && file.size > MAX_FILE_SIZE_BYTES) {
+          return '画像は 1 枚あたり 5MB 以下にしてください。'
+        }
+        return null
+      }
+
+  3d. 変換後のサイズチェック:
+    HEIC は高圧縮のため、JPEG 変換後にサイズが増える場合がある。
+    変換後に MAX_FILE_SIZE_BYTES を超える場合は:
+      - status: 'error', error: '変換後のサイズが 5MB を超えました。'
+      - ユーザーに通知してスキップ
+
+  3e. accept 属性の更新:
+    ACCEPT 定数を INPUT_ACCEPT_TYPES に変更:
+      変更前: const ACCEPT = ALLOWED_MIME_TYPES.join(',')
+      変更後: import { INPUT_ACCEPT_TYPES } from '@shared/lib/attachmentValidation'
+              // accept プロパティで INPUT_ACCEPT_TYPES を返す
+
+Step 4: ImagePreviewBar.tsx に変換中インジケータを追加する
+  ファイル: src/features/chat/components/ImagePreviewBar.tsx
+
+  status === 'converting' の場合のオーバーレイを追加:
+    {item.status === 'converting' && (
+      <div className="absolute inset-0 bg-blue-500/40 flex items-center justify-center">
+        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+        <span className="text-white text-[9px] ml-1">変換中</span>
+      </div>
+    )}
+
+  変換中はプレビュー画像がまだないため、プレースホルダーを表示:
+    {item.previewUrl ? (
+      <img src={item.previewUrl} alt={item.file.name} className="w-full h-full object-cover" />
+    ) : (
+      <div className="w-full h-full flex items-center justify-center bg-gray-100">
+        <span className="text-gray-400 text-xs">HEIC</span>
+      </div>
+    )}
+
+Step 5: ChatInterface.tsx の送信制御を更新する
+  ファイル: src/features/chat/components/ChatInterface.tsx
+
+  変換中（status === 'converting' のアイテムがある間）は送信ボタンを無効化:
+    - useImageAttachments の戻り値に isConverting を追加
+    - disabled 条件に isConverting を追加
+
+Step 6: テストを追加する
+  新規テストファイル: tests/hooks/useImageAttachments.test.ts（または既存テストに追加）
+
+  テストケース:
+    - HEIC ファイルが addFiles に渡された場合、status が 'converting' → 'pending' に遷移する
+    - 変換後のファイルの MIME が 'image/jpeg' になっている
+    - 変換後のファイル名が .jpg で終わっている
+    - 変換後のサイズが 5MB を超える場合、status が 'error' になる
+    - 非 HEIC ファイル（JPEG 等）は従来通り即座に 'pending' になる
+    - heic2any の import 失敗時（ネットワークエラー等）にエラーハンドリングされる
+
+  注意: heic2any は実際の HEIC バイナリが必要なため、
+        ユニットテストではモック化する:
+    vi.mock('heic2any', () => ({
+      default: vi.fn().mockResolvedValue(new Blob(['fake'], { type: 'image/jpeg' })),
+    }))
+
+Risks / Follow-ups
+
+- heic2any のバンドルサイズ（約 200KB gzip）:
+  dynamic import で遅延読み込みするため、初回の HEIC 添付時のみロードされる。
+  非 HEIC ユーザーには影響なし。
+  将来的に気になる場合は Web Worker で変換する最適化が可能。
+
+- HEIC 変換の処理時間:
+  1〜3 秒程度（画像サイズによる）。'converting' ステータスの UI で
+  ユーザーに待機を明示する。
+
+- マルチフレーム HEIC（Live Photos）:
+  heic2any はデフォルトで最初のフレームのみ変換する。
+  Live Photos の動画部分は無視される。意図通り。
+
+- iOS Safari の自動変換との二重変換:
+  iOS Safari がファイルピッカーで HEIC を JPEG に自動変換する場合、
+  file.type は 'image/jpeg' になるため、変換ロジックはスキップされる。
+  つまり二重変換は発生しない。
+
+- HEIC 以外の非対応形式（GIF, SVG, PDF 等）:
+  従来通り拒否。CONVERTIBLE_MIME_TYPES に含まれないものは
+  ALLOWED_MIME_TYPES でチェックされエラーになる。
+
+Step 7: ドキュメント更新（HEIC 対応に伴う不整合の解消）
+  GFX-30 で HEIC を「クライアント変換で対応」とするため、
+  「非対応」と記載されている箇所を更新する。
+
+  7a. docs/attachments.md:16
+    変更前: **非対応**: GIF（アニメーション不要）、HEIC（ブラウザ互換性）、SVG（XSS リスク）、PDF
+    変更後: **非対応**: GIF（アニメーション不要）、SVG（XSS リスク）、PDF
+             **自動変換**: HEIC/HEIF（クライアント側で JPEG に変換後アップロード）
+
+  7b. docs/attachments.md:137
+    エラーメッセージ表に HEIC の注記を追加:
+    → 「HEIC/HEIF はクライアント側で自動変換されるためエラーにならない」
+
+  7c. docs/attachments.md:151
+    accept 属性の記載を更新:
+    変更前: accept="image/jpeg,image/png,image/webp"
+    変更後: accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+
+  7d. docs/troubleshooting.md:147
+    変更前: | **対応形式** | JPEG / PNG / WebP のみ（`ALLOWED_MIME_TYPES`） |
+    変更後: | **対応形式** | JPEG / PNG / WebP（HEIC/HEIF はクライアント側で JPEG に自動変換） |
+
+  7e. docs/security.md:254
+    変更前: * **許可**：`image/jpeg`, `image/png`, `image/webp`
+    変更後: * **許可**：`image/jpeg`, `image/png`, `image/webp`
+             * **自動変換（クライアント側）**：`image/heic`, `image/heif` → JPEG に変換後アップロード
+
+  7f. docs/testing.md:299
+    HEIC 変換のテスト項目を追加:
+    → 「HEIC 画像を添付した場合、自動的に JPEG に変換されてアップロードされる」
+
+  7g. CLAUDE.md — 添付画像機能セクション
+    バリデーション定数の記載に HEIC 変換対応を追記
+
+Acceptance Criteria (Done)
+- [ ] pnpm add heic2any が実行され、package.json に追加されている
+- [ ] CONVERTIBLE_MIME_TYPES と INPUT_ACCEPT_TYPES が attachmentValidation.ts に定義されている
+- [ ] iPhone から HEIC 画像を添付すると、自動的に JPEG に変換されてアップロードされる
+- [ ] 変換中に ImagePreviewBar に「変換中」インジケータが表示される
+- [ ] 変換中は送信ボタンが無効化される
+- [ ] 変換後のファイルの MIME タイプが image/jpeg になっている
+- [ ] 変換後のファイルサイズが 5MB を超える場合、エラーが表示される
+- [ ] 従来の JPEG/PNG/WebP 添付は影響を受けない（変換ロジックがスキップされる）
+- [ ] サーバー側（sign API, chat API）に変更がない
+- [ ] テストが追加されている
+- [ ] ドキュメント更新: attachments.md, troubleshooting.md, security.md, testing.md, CLAUDE.md が更新されている
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
 ## 4. 実装ロードマップサマリー
 
 ```
@@ -1856,6 +2137,9 @@ Critical: GFX-29
 Hotfix: GFX-27, GFX-28
   → GFX-27: ログインリダイレクト先修正（1 行変更）
   → GFX-28: UsageBadge リアルタイム更新（UAT TC_B_010 対応）
+
+Sprint 5: GFX-30
+  → HEIC/HEIF 画像のクライアント変換対応（iPhone ユーザー UX）
 
 Backlog: GFX-19, GFX-20, GFX-21, GFX-22, GFX-23, GFX-24, GFX-25, GFX-26
   → 優先度に応じて順次対応
