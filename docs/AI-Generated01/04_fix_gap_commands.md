@@ -93,6 +93,7 @@
 | GFX-26 | GAP-28 | スタッフ用レポート閲覧パネル実装 | Backlog |
 | GFX-27 | GAP-10 (残作業) | スタッフログイン後のリダイレクト先修正 | Hotfix |
 | GFX-28 | (新規) | UsageBadge のリアルタイム更新 | Hotfix |
+| GFX-29 | (新規) | 会話継続・メッセージ保存・時系列の修正 | Critical |
 
 ---
 
@@ -1566,6 +1567,271 @@ Acceptance Criteria (Done)
 
 ---
 
+## GFX-29: 会話継続・メッセージ保存・時系列の修正（3 症状の統合修正）
+
+```text
+[Task Title]
+チャットの会話継続・メッセージ永続化・時系列表示を正しく機能させる
+
+Goal
+- 同一会話で 2 通目以降のメッセージを送信しても新しい会話が作成されず、
+  既存の会話にメッセージが追記されるようにする。
+- リロード後も会話内のすべてのメッセージが正しい時系列で表示されるようにする。
+- UAT 仕様書 TC_B_001〜TC_B_003（連続チャットの基本動作）を満たす。
+
+Background — 報告された 3 つの症状
+1. 毎回新しい会話が作られる（同一会話で連続質問できない）
+2. リロードすると最新のユーザーメッセージ + AI 応答の 1 ペアしか表示されない
+3. メッセージの時系列が逆転する（AI 応答がユーザーメッセージより上に表示）
+
+Root Cause Analysis — 3 つの根本原因
+
+■ 原因 A: サーバーが常に新しい会話を作成する
+  場所: app/api/chat/route.ts:112
+  コード: const conversationId = crypto.randomUUID()
+  問題: リクエストから既存の conversationId を受け取るロジックがない。
+        毎回 crypto.randomUUID() で新規 ID を生成し、onFinish で
+        conversations テーブルに INSERT する。クライアントが既存の
+        会話内でメッセージを送信しても、サーバーは別の会話として保存する。
+
+■ 原因 B: クライアントが conversationId をサーバーに送信していない
+  場所: src/features/chat/components/ChatInterface.tsx:185-194
+  コード: await sendMessage({ text: userMessage }, { headers: {...}, body: ... })
+  問題: ChatSession コンポーネントは props で conversationId を受け取っているが、
+        sendMessage の body にそれを含めていない。
+        AI SDK v6 の sendMessage の第 2 引数 options.body はリクエスト body に
+        マージされる（node_modules/ai/dist/index.mjs:11681-11688 で確認済み）
+        ため、body: { conversationId } を渡せばサーバーで取得できるが、
+        現在はそうなっていない。
+
+■ 原因 C: メッセージの時系列が保証されない
+  場所: app/api/chat/route.ts:157-174, supabase/migrations/20260127_chat_history.sql
+  問題: user メッセージと assistant メッセージを同一バッチで INSERT しており、
+        明示的な created_at を渡していない。PostgreSQL の DEFAULT now() は
+        同一トランザクション内で同一値を返すため、両メッセージが同じタイムスタンプ
+        になる。その結果、ORDER BY created_at ASC の tie-break が UUID の
+        辞書順に依存し、user が assistant より後に来る場合がある。
+
+Context — 調査で確認した技術的詳細
+
+- AI SDK v6 の sendMessage options.body:
+  HttpChatTransport.sendMessages (ai/dist/index.mjs:11681-11688) で
+  body = { ...resolvedBody, ...options.body, id, messages, trigger, messageId }
+  としてマージされるため、sendMessage の body に含めたフィールドは
+  サーバーの req.json() で取得できる。
+
+- 現在の onFinish の処理順序 (route.ts:139-216):
+  1. conversations.insert（毎回新規 INSERT）
+  2. messages.insert（最新 user + assistant の 1 ペアだけ）
+  3. attachments.insert（添付がある場合）
+  4. incrementUsage
+  5. タイトル LLM 生成（非同期 void）
+  → 既存会話に追記する場合、1 はスキップし 2 だけ実行すべき。
+
+- messages テーブルのスキーマ (20260127_chat_history.sql):
+  created_at timestamptz not null default now()
+  インデックス: idx_messages_conversation_created_at (conversation_id, created_at asc)
+  → 順序保証のための列（seq SERIAL 等）は存在しない。
+
+- GET /api/conversations/[id] のクエリ:
+  .order('created_at', { ascending: true })
+  .order('id', { ascending: true })
+  → Supabase SDK では 2 つの .order() は PRIMARY + SECONDARY ソートとして
+    正しく動作するが、created_at が同一の場合 UUID の辞書順は
+    生成順を反映しないため意味のある tie-break にならない。
+
+- app/chat/page.tsx の selectedId 管理:
+  初期値は '' → 最初のメッセージ送信後、onConversationCreated コールバックで
+  selectedId が設定される → ChatInterface に conversationId として渡される。
+  2 通目以降は selectedId が空でないので conversationId は利用可能。
+  ただし ChatSession がその conversationId を sendMessage に渡していない。
+
+Scope
+- 変更OK:
+  - app/api/chat/route.ts（conversationId の受け取り + 条件分岐保存ロジック + 明示的 created_at）
+  - src/features/chat/components/ChatInterface.tsx（sendMessage body に conversationId を追加）
+  - supabase/migrations/（新規: messages テーブルに seq 列追加マイグレーション）
+  - app/api/conversations/[id]/route.ts（ORDER BY を seq に変更）
+  - tests/**（変更に伴うテスト修正・追加）
+- 変更NG:
+  - AI SDK 内部（node_modules）の変更
+  - useChat フックの API エンドポイント変更（/api/chat のまま）
+  - app/chat/page.tsx（selectedId 管理は現状で正しく動作している）
+  - conversations テーブルのスキーマ（会話自体の構造は変更不要）
+
+Implementation — Step-by-Step
+
+Step 1: クライアント — conversationId をサーバーに送信する
+  ファイル: src/features/chat/components/ChatInterface.tsx
+  場所: ChatSession の onSubmit 内、sendMessage の呼び出し (L185-194)
+
+  変更前:
+    await sendMessage({
+      text: userMessage,
+    }, {
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: attachmentMeta.length > 0
+        ? { attachments: attachmentMeta }
+        : undefined,
+    })
+
+  変更後:
+    const bodyPayload: Record<string, unknown> = {}
+    if (conversationId) {
+      bodyPayload.conversationId = conversationId
+    }
+    if (attachmentMeta.length > 0) {
+      bodyPayload.attachments = attachmentMeta
+    }
+    await sendMessage({
+      text: userMessage,
+    }, {
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: Object.keys(bodyPayload).length > 0 ? bodyPayload : undefined,
+    })
+
+  注意: AI SDK v6 は options.body をリクエスト body にマージする。
+        conversationId はサーバー側で requestBody.conversationId として取得可能。
+
+Step 2: サーバー — 既存会話への追記をサポートする
+  ファイル: app/api/chat/route.ts
+
+  2a. requestBody の型に conversationId を追加 (L84-89):
+    const requestBody = (await req.json()) as {
+      messages?: UIMessageWithLegacyContent[]
+      attachments?: AttachmentInput[]
+      conversationId?: string  // ← 追加
+    }
+
+  2b. conversationId の決定ロジックを変更 (L112):
+    変更前:
+      const conversationId = crypto.randomUUID()
+    変更後:
+      const isNewConversation = !requestBody.conversationId
+      const conversationId = requestBody.conversationId ?? crypto.randomUUID()
+
+  2c. onFinish 内の保存ロジックを条件分岐 (L150-155):
+    変更前:
+      await supabaseAdmin.from('conversations').insert({
+        id: conversationId,
+        user_id: user.id,
+        title: makeTitle(),
+      })
+    変更後:
+      if (isNewConversation) {
+        await supabaseAdmin.from('conversations').insert({
+          id: conversationId,
+          user_id: user.id,
+          title: makeTitle(),
+        })
+      }
+
+  2d. セキュリティ: conversationId が渡された場合、そのオーナーが
+      リクエストユーザーであることを検証する（他人の会話に追記を防止）:
+    if (!isNewConversation) {
+      const { data: conv } = await supabaseAdmin
+        .from('conversations')
+        .select('user_id')
+        .eq('id', conversationId)
+        .single()
+      if (!conv || conv.user_id !== user.id) {
+        return new Response(
+          JSON.stringify({ error: '会話が見つかりません' }),
+          { status: 404, headers: { 'Content-Type': 'application/json' } },
+        )
+      }
+    }
+    このチェックは onFinish の外（レスポンス開始前の L112 付近）で行うこと。
+    onFinish 内ではストリーミングが始まった後なのでエラーレスポンスを返せない。
+
+  2e. タイトル LLM 生成は新規会話のみに限定:
+    変更前: if (userText && assistantText) { void (async () => { ... })() }
+    変更後: if (isNewConversation && userText && assistantText) { ... }
+
+Step 3: メッセージの時系列を保証する
+  3 つのサブステップで対応する。
+
+  3a. マイグレーション: messages テーブルに seq 列を追加
+    ファイル: supabase/migrations/YYYYMMDD000000_gfx29_message_seq.sql（新規）
+    内容:
+      ALTER TABLE messages ADD COLUMN seq BIGSERIAL;
+      CREATE INDEX idx_messages_conversation_seq
+        ON messages(conversation_id, seq ASC);
+    BIGSERIAL は INSERT 順に自動採番されるため、
+    同一バッチの INSERT でも user → assistant の順序が保証される。
+
+  3b. サーバー: messages INSERT を個別に実行して seq の順序を保証
+    ファイル: app/api/chat/route.ts (L157-174)
+    変更前:
+      const rows = []
+      if (userText) { rows.push({...user...}) }
+      rows.push({...assistant...})
+      await supabaseAdmin.from('messages').insert(rows)
+    変更後:
+      // user メッセージを先に INSERT（seq が先に採番される）
+      if (userText) {
+        await supabaseAdmin.from('messages').insert({
+          id: userMessageId,
+          conversation_id: conversationId,
+          role: 'user',
+          content: userText,
+        })
+      }
+      // assistant メッセージを後に INSERT（seq が user + 1 になる）
+      await supabaseAdmin.from('messages').insert({
+        id: crypto.randomUUID(),
+        conversation_id: conversationId,
+        role: 'assistant',
+        content: assistantText,
+      })
+    注意: バッチ INSERT を 2 回の個別 INSERT に分割することで、
+          BIGSERIAL の採番順が保証される。
+          パフォーマンス影響は軽微（同一 onFinish 内の 2 クエリ）。
+
+  3c. GET API: ORDER BY を seq に変更
+    ファイル: app/api/conversations/[id]/route.ts
+    変更前:
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+    変更後:
+      .order('seq', { ascending: true })
+    select に 'seq' を追加するかはオプション（クライアントに返す必要はない）。
+
+Step 4: テスト修正・追加
+  - tests/api/chat-conversations.integration.test.ts:
+    MockQuery の messages INSERT モックに seq 列対応を追加
+  - 新規テストケース:
+    - 既存会話へのメッセージ追記が動作する
+    - 追記時に conversations テーブルに新規行が作られない
+    - 他人の conversationId を送信した場合 404 が返る
+    - messages の seq 順が user → assistant になる
+
+Risks / Follow-ups
+- 既存データへの影響: seq 列追加は BIGSERIAL のため既存行にも自動採番される。
+  ただし既存行の seq 順序は INSERT 順（≒ id 生成順）になるため、
+  既存の同一タイムスタンプ問題は解決しない。
+  → 既存データの修復が必要な場合は別途対応（β版 20 名規模なので手動修復可能）。
+- conversationId の偽装防止: Step 2d のオーナーチェックで対応済み。
+  ただし UUID の推測は困難なため、実質的なリスクは低い。
+- AI SDK v6 の body マージ仕様への依存: options.body が
+  リクエスト body にマージされることを index.mjs:11681-11688 で確認済み。
+  SDK のメジャーバージョンアップ時に再確認が必要。
+
+Acceptance Criteria (Done)
+- [ ] 同一会話で 2 通目以降のメッセージが同じ会話に追記される
+- [ ] リロード後、会話内のすべてのメッセージが表示される（1 ペアだけではない）
+- [ ] メッセージが正しい時系列で表示される（user → assistant の順）
+- [ ] 新規会話は従来通り新しい conversation レコードが作成される
+- [ ] 他人の conversationId を送信した場合 404 が返る（セキュリティ）
+- [ ] タイトル LLM 生成は新規会話のときのみ実行される
+- [ ] messages テーブルに seq 列が追加されている
+- [ ] GET /api/conversations/[id] が seq 順でメッセージを返す
+- [ ] テストが追加・修正されている
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
 ## 4. 実装ロードマップサマリー
 
 ```
@@ -1582,6 +1848,10 @@ Sprint 3 (1-2週間): GFX-09, GFX-10, GFX-11, GFX-12 (すべて並列可)
 
 Sprint 4 (1-2週間): GFX-13, GFX-14, GFX-15, GFX-16, GFX-17, GFX-18
   → パフォーマンス + セキュリティの堅牢化
+
+Critical: GFX-29
+  → 会話継続・メッセージ保存・時系列の統合修正（チャット基本動作の根幹）
+  → マイグレーション適用が必要（messages テーブルに seq 列追加）
 
 Hotfix: GFX-27, GFX-28
   → GFX-27: ログインリダイレクト先修正（1 行変更）
