@@ -2,7 +2,7 @@
  * `/api/chat` Route Handler
  * 機能：チャットメッセージを受信し、AIからの応答をストリーミングで返す。
  *   添付画像がある場合は Storage の署名 URL を生成し、AI に ImagePart として渡す（Vision 入力）。
- *   添付画像は attachments テーブルにも永続化する。
+ *   添付画像は attachments テーブルにも永続化する（テキストなし＋画像のみの送信にも対応）。
  *   分間レート制限（10 req/min）と月間クォータ（100 問/月）を適用。
  *   添付枚数（3枚）・メッセージ文字数（2000文字）のサーバーサイドバリデーション。
  *   会話保存後に LLM（gpt-4o-mini）で20文字以内のタイトルを非同期生成。
@@ -229,13 +229,17 @@ export async function POST(req: Request) {
 
           // 最新のユーザーメッセージ + AI 応答を保存
           // 個別 INSERT で seq（BIGSERIAL）の採番順を保証する
+          // テキストまたは添付がある場合にユーザーメッセージを保存
+          // 画像のみ送信時は content が空文字になるが、
+          // attachments テーブルとの紐付けのためにレコードは必要
+          const hasUserContent = userText || attachmentInputs.length > 0
           const userMessageId = crypto.randomUUID()
-          if (userText) {
+          if (hasUserContent) {
             await supabaseAdmin.from('messages').insert({
               id: userMessageId,
               conversation_id: conversationId,
               role: 'user' as const,
-              content: userText,
+              content: userText || '',
             })
           }
           await supabaseAdmin.from('messages').insert({
@@ -246,7 +250,7 @@ export async function POST(req: Request) {
           })
 
           // 添付画像がある場合は attachments テーブルに保存
-          if (attachmentInputs.length > 0 && userText) {
+          if (attachmentInputs.length > 0) {
             const attachmentRows = attachmentInputs.map((a) => ({
               id: crypto.randomUUID(),
               message_id: userMessageId,
@@ -262,12 +266,15 @@ export async function POST(req: Request) {
           await incrementUsage(appUserId)
 
           // LLM でタイトルを非同期生成（新規会話のみ。失敗しても既存タイトルが残る）
-          if (isNewConversation && userText && assistantText) {
+          if (isNewConversation && hasUserContent && assistantText) {
             void (async () => {
               try {
+                const titlePromptContext = userText
+                  ? `ユーザー: ${userText.slice(0, 200)}\nAI: ${assistantText.slice(0, 200)}`
+                  : `AI: ${assistantText.slice(0, 200)}`
                 const titleResult = await generateText({
                   model: openai('gpt-4o-mini'),
-                  prompt: `以下のユーザーの質問とAIの回答から、20文字以内の短い会話タイトルを生成してください。タイトルのみを出力してください。\nユーザー: ${userText.slice(0, 200)}\nAI: ${assistantText.slice(0, 200)}`,
+                  prompt: `以下のユーザーの質問とAIの回答から、20文字以内の短い会話タイトルを生成してください。タイトルのみを出力してください。\n${titlePromptContext}`,
                 })
                 const generatedTitle = titleResult.text.trim().slice(0, 20)
                 if (generatedTitle) {

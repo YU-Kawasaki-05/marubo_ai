@@ -51,6 +51,10 @@ function ChatSession({
   const [input, setInput] = useState('')
   const [chatError, setChatError] = useState<string | null>(null)
 
+  // 送信直後の添付画像メタをメッセージ ID にマッピング（リロード前のサムネイル表示用）
+  const [localAttachments, setLocalAttachments] = useState<Record<string, MessageAttachment[]>>({})
+  const pendingAttachmentsRef = useRef<{ storagePath: string; mimeType: string; size: number }[] | null>(null)
+
   // ネットワーク状態監視
   const { isOnline } = useNetworkStatus()
 
@@ -92,6 +96,25 @@ function ChatSession({
       setMessages(initialMessages)
     }
   }, [initialMessages, setMessages]) // 親から切り替わった初期メッセージを反映
+
+  // 送信直後の添付画像メタを最新の user メッセージに紐付ける
+  useEffect(() => {
+    if (!pendingAttachmentsRef.current) return
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')
+    if (lastUserMsg && !localAttachments[lastUserMsg.id]) {
+      const meta = pendingAttachmentsRef.current
+      setLocalAttachments((prev) => ({
+        ...prev,
+        [lastUserMsg.id]: meta.map((a) => ({
+          id: crypto.randomUUID(),
+          storagePath: a.storagePath,
+          mimeType: a.mimeType,
+          sizeBytes: a.size,
+        })),
+      }))
+      pendingAttachmentsRef.current = null
+    }
+  }, [messages, localAttachments])
 
   // DEBUG: messages ステートの変化を詳細にログ出力 (必要に応じてコメント解除)
   /*
@@ -178,6 +201,11 @@ function ChatSession({
           // アップロード全件失敗の場合は送信中止
           return
         }
+      }
+
+      // 添付メタを一時保存（sendMessage 後の useEffect で紐付ける）
+      if (attachmentMeta.length > 0) {
+        pendingAttachmentsRef.current = attachmentMeta
       }
 
       // sendMessage を使ってメッセージを追加・送信
@@ -278,7 +306,7 @@ function ChatSession({
           <MessageBubble
             key={m.id}
             message={m}
-            attachments={attachmentsByMessageId[m.id]}
+            attachments={attachmentsByMessageId[m.id] ?? localAttachments[m.id]}
           />
         ))}
 
