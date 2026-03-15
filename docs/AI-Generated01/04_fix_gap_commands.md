@@ -101,6 +101,8 @@
 | GFX-34 | (新規) | 会話 ID の URL 管理と画面遷移の安定化 | Critical |
 | GFX-35 | (新規) | sync-user で生徒の app_metadata.role 自動設定 | Critical (Blocker) |
 | GFX-36 | (新規) | 許可メール一覧の検索・フィルタ即時リロード解消 | Sprint 6 |
+| GFX-37 | (新規) | 許可メール一覧に生徒の個別登録フォーム追加 | 実装済み |
+| GFX-38 | (新規) | Google OAuth ログインの導入 | Critical (β版リリース前) |
 
 ---
 
@@ -3469,6 +3471,202 @@ Acceptance Criteria (Done)
 
 ---
 
+## GFX-37: 許可メール一覧に生徒の個別登録フォームを追加（実装済み）
+
+```text
+[Task Title]
+/admin/allowlist にスタッフが1人ずつ生徒を登録できるインラインフォームを追加する
+
+Goal
+- CSV 一括登録に加え、スタッフが1人ずつ生徒のメールアドレスを登録できる UI を追加する。
+- 登録された生徒は active ステータスで追加され、
+  即座にチャット・レポート等すべての機能を利用できる。
+
+Context
+- 既存の API（POST /api/admin/allowlist）とフック（createAllowedEmail）は
+  個別登録をサポート済み。フロントの UI が不足していただけ。
+
+Implementation
+- app/admin/allowlist/page.tsx に AddStudentForm コンポーネントを追加
+- 「+ 生徒を個別登録」ボタンで展開するインラインフォーム
+- メールアドレス（必須）+ ラベル（任意）を入力して登録
+- 登録時のステータスは常に active
+- 簡易メール形式バリデーション
+- サーバー変更なし（既存 API を使用）
+
+Status: 実装済み（feat/gfx-37-individual-student-registration ブランチ）
+```
+
+---
+
+## GFX-38: Google OAuth ログインの導入
+
+```text
+[Task Title]
+Supabase の Google OAuth Provider を有効化し、
+ログインページに「Google でログイン」ボタンを追加する
+
+Goal
+- 生徒が Google アカウントでワンクリックログインできるようにする。
+- パスワード管理の負担を排除し、β版の問合せ（パスワード忘れ）を削減する。
+- 既存の Email/Password 認証はフォールバックとして並行運用する。
+
+Background — なぜ必要か
+- 対象ユーザーは中高生（約20名のβ版）。パスワード管理に不慣れな層。
+- Email/Password のみの場合、「パスワード忘れた」の問合せが頻発する見込み。
+- 中高生は日常的に Google（Gmail, YouTube, Google Classroom 等）を使用しており、
+  Google ログインが最も自然な認証 UX。
+- Supabase は Google を第一級プロバイダとしてサポートしており、
+  Dashboard で ON にするだけ + ログインページにボタン追加で完了する。
+- allowlist の照合ロジック（/api/sync-user）はメールベースのため、
+  認証方式を問わず動作する。変更不要。
+
+前提条件
+- Google Cloud Console で OAuth Client ID/Secret を取得済みであること
+- Supabase Dashboard で Google Provider を有効化済みであること
+- 設定手順: docs/AI-Generated01/05_google_oauth_setup_guide.md を参照
+- GFX-35（sync-user で app_metadata.role 設定）が適用済みであること
+
+Scope
+- 変更OK:
+  - app/login/page.tsx（「Google でログイン」ボタン追加）
+  - docs/security.md（認証プロバイダに Google OAuth を追記）
+  - CLAUDE.md（認証方式の更新）
+- 変更NG:
+  - app/api/sync-user/route.ts（変更不要 — メールベース照合は認証方式に依存しない）
+  - middleware.ts（変更不要 — Supabase セッション cookie で認証、方式を問わない）
+  - allowlist 関連 API/UI（変更不要）
+
+Implementation — Step-by-Step
+
+Step 1: ログインページに Google ログインボタンを追加する
+  ファイル: app/login/page.tsx
+
+  1a. signInWithOAuth 関数を追加:
+    const handleGoogleLogin = async () => {
+      const supabase = getSupabaseBrowserClient()
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'google',
+        options: {
+          redirectTo: `${window.location.origin}/login`,
+        },
+      })
+      if (error) {
+        setErrorMsg('Google ログインに失敗しました。')
+      }
+    }
+
+  注意:
+    - redirectTo はログインページ自体を指定する。
+      Google 認証後、Supabase がセッションを設定して redirectTo に戻す。
+      login ページの既存ロジック（onAuthStateChange）がセッションを検知して
+      /api/sync-user を呼び出し、その後 /chat にリダイレクトする。
+    - supabase.auth.signInWithOAuth はページ遷移を伴う（Google のログイン画面へ）。
+      Promise の resolve は遷移前に完了するため、エラー時のみハンドリング。
+
+  1b. ボタン UI を追加（既存のログインフォームの上または下）:
+    <button
+      type="button"
+      onClick={handleGoogleLogin}
+      className="w-full flex items-center justify-center gap-3 rounded-lg
+                 border border-slate-300 bg-white px-4 py-3 text-sm font-medium
+                 text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
+    >
+      <svg viewBox="0 0 24 24" width="20" height="20">
+        {/* Google G logo SVG */}
+      </svg>
+      Google でログイン
+    </button>
+
+  1c. 区切り線を追加:
+    <div className="relative my-6">
+      <div className="absolute inset-0 flex items-center">
+        <div className="w-full border-t border-slate-200" />
+      </div>
+      <div className="relative flex justify-center text-sm">
+        <span className="bg-white px-4 text-slate-400">または</span>
+      </div>
+    </div>
+
+  1d. 新規登録フォームにも Google オプションを表示:
+    サインアップ画面（isSignUp = true の場合）にも同じ Google ボタンを表示。
+    signInWithOAuth は未登録ユーザーの場合、自動的にアカウントを作成する。
+
+Step 2: OAuth コールバック後のフローを確認する
+  ファイル: app/login/page.tsx
+
+  既存の onAuthStateChange が SIGNED_IN イベントを検知して
+  /api/sync-user を呼び出すフローが、Google OAuth でも動作することを確認:
+
+  - Google 認証後、Supabase が auth.users にユーザーを作成
+  - セッション cookie を設定して redirectTo（/login）にリダイレクト
+  - login ページの useEffect で onAuthStateChange が発火
+  - SIGNED_IN / INITIAL_SESSION イベントで /api/sync-user を呼び出す
+  - sync-user が allowlist を照合し、active なら /chat にリダイレクト
+
+  注意:
+    - 既存の handleLogin / handleSignUp フローとの競合がないことを確認。
+      Google OAuth はページ遷移を伴うため、既存の state は リセットされる。
+    - onAuthStateChange 内の sync-user 呼び出しが、
+      Google OAuth ログイン時にも正しく発火することを確認。
+
+Step 3: ドキュメントを更新する
+
+  3a. docs/security.md:
+    - 認証プロバイダに Google OAuth を追記
+    - 認証フローに Google OAuth の経路を追加
+    - 変更前: "プロバイダー：Google OAuth 2.0"（ドキュメント上は記載済みだが未実装だった）
+    - 変更後: 実装済みであることを明記
+
+  3b. CLAUDE.md:
+    - プロジェクト概要の認証方式を更新
+    - 完了した PR 一覧に追記
+
+Step 4: CSP（Content Security Policy）の更新
+  ファイル: next.config.js
+
+  Google OAuth のリダイレクト先（accounts.google.com）が
+  CSP の connect-src / form-action に含まれていない場合、ブロックされる可能性がある。
+
+  確認:
+    - Supabase の signInWithOAuth はページ遷移（window.location）を使うため、
+      CSP の影響を受けない可能性が高い。
+    - ただし、Google のログインポップアップを使う場合は
+      frame-src に accounts.google.com を追加する必要がある。
+  → まず動作確認し、CSP エラーが出た場合のみ修正する。
+
+Risks / Follow-ups
+- Google Cloud Console のテストステータス:
+  OAuth 同意画面が「テスト」のままだと、テストユーザーに登録した
+  Google アカウントでしかログインできない。
+  β版リリース前に「アプリを公開」する必要がある（審査不要）。
+- Email の一致:
+  Google アカウントのメールと allowlist のメールが一致する必要がある。
+  Google Workspace の場合はエイリアス（+tag）に注意。
+  sync-user は email.toLowerCase().trim() で正規化するため、
+  大文字小文字の差異は問題ない。
+- 既存ユーザーの移行:
+  Email/Password で登録済みのユーザーが Google OAuth でもログインした場合、
+  同じメールアドレスなら Supabase が自動的にアカウントをリンクする
+  （デフォルト設定）。手動対応は不要。
+- GFX-35 への依存:
+  Google OAuth でログインしても、sync-user が app_metadata.role を
+  設定しないと requireAuth() でブロックされる。GFX-35 の適用が前提。
+
+Acceptance Criteria (Done)
+- [ ] Google Cloud Console で OAuth Client ID/Secret が取得されている
+- [ ] Supabase Dashboard で Google Provider が有効化されている
+- [ ] ログインページに「Google でログイン」ボタンが表示される
+- [ ] Google ボタンをクリックすると Google のログイン画面に遷移する
+- [ ] Google 認証後、allowlist に登録済み（active）のメールで /chat に遷移する
+- [ ] allowlist に未登録のメールで Google ログインすると適切なエラーが表示される
+- [ ] 既存の Email/Password ログインが引き続き動作する
+- [ ] docs/security.md が更新されている
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
 ## 4. 実装ロードマップサマリー
 
 ```
@@ -3514,8 +3712,14 @@ Gate H（GFX-31 の前に実施）: GFX-32
 Sprint 5: GFX-30
   → HEIC/HEIF 画像のクライアント変換対応（iPhone ユーザー UX）
 
-Sprint 6: GFX-36
-  → 許可メール一覧の検索・フィルタ即時リロード解消（デバウンス + インラインローディング）
+Sprint 6: GFX-36, GFX-37（実装済み）
+  → GFX-36: 許可メール一覧の検索・フィルタ即時リロード解消（デバウンス + インラインローディング）
+  → GFX-37: 許可メール一覧に生徒の個別登録フォーム追加（実装済み）
+
+Critical (β版リリース前): GFX-38
+  → Google OAuth ログインの導入（Google でログインボタン追加）
+  → GFX-35（sync-user で app_metadata.role 設定）が前提条件
+  → 設定手順: docs/AI-Generated01/05_google_oauth_setup_guide.md
 
 Backlog: GFX-19, GFX-20, GFX-21, GFX-22, GFX-23, GFX-24, GFX-25, GFX-26
   → 優先度に応じて順次対応
