@@ -175,6 +175,7 @@
 | **GFX-32** | done | (新規) | Supabase Storage 設定 | `attachments` バケット作成 + SELECT/INSERT ポリシー設定のマイグレーション SQL。スタッフ全件読み取りポリシー含む。 |
 | **GFX-33** | done | (新規) | 画像のみ送信対応 | テキストなし + 画像のみ送信時の messages/attachments DB 保存修正。送信直後のサムネイル即時表示（`localAttachments`）。「構造化データを受信中...」フォールバック改善。 |
 | **GFX-34** | todo | (新規) | 会話 ID の URL 管理 | `?c=xxx` searchParams で会話 ID を URL に反映。リロード耐性・新規チャットボタン・自動リロード解消。詳細: `docs/AI-Generated01/04_fix_gap_commands.md` |
+| **GFX-35** | todo | (新規) | sync-user で app_metadata.role 自動設定 | `/api/sync-user` で `auth.admin.updateUserById` により `app_metadata.role = 'student'` を自動設定。全生徒が `requireAuth()` で 403 になるブロッカーバグの修正。既存ユーザーの自動リカバリ + docs 更新含む。**Critical (Blocker)** |
 
 ---
 

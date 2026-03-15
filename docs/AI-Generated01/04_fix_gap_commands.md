@@ -99,6 +99,8 @@
 | GFX-32 | (新規) | Supabase Storage バケット・ポリシー設定（人間作業） | Gate H |
 | GFX-33 | (新規) | 画像添付メッセージの保存・表示修正（テキストなし送信対応） | Critical |
 | GFX-34 | (新規) | 会話 ID の URL 管理と画面遷移の安定化 | Critical |
+| GFX-35 | (新規) | sync-user で生徒の app_metadata.role 自動設定 | Critical (Blocker) |
+| GFX-36 | (新規) | 許可メール一覧の検索・フィルタ即時リロード解消 | Sprint 6 |
 
 ---
 
@@ -3043,6 +3045,430 @@ Acceptance Criteria (Done)
 
 ---
 
+## GFX-35: sync-user で生徒の app_metadata.role を自動設定する
+
+```text
+[Task Title]
+/api/sync-user で app_user 作成時に auth.app_metadata.role = 'student' を
+自動設定し、全生徒が requireAuth を通過できるようにする
+
+Goal
+- 生徒がログインした際、Supabase Auth の app_metadata.role が
+  自動的に 'student' に設定されるようにする。
+- これにより、requireAuth() を使う全エンドポイント
+  （/api/reports/monthly 等）に生徒がアクセスできるようになる。
+- 既存の運用フロー（手動 SQL 実行や admin/grant 経由）を不要にする。
+
+Background — なぜ必要か
+- UAT テスト（TC_E_001: 生徒レポート閲覧）で
+  allowed_email status='active' の生徒が /reports にアクセスしたところ
+  「エラー: ユーザーロールを特定できませんでした。」（403）が発生。
+- 原因調査の結果、生徒の auth.users.raw_app_meta_data に
+  "role" フィールドが存在しないことが判明:
+    { "provider": "email", "providers": ["email"] }
+    ← "role": "student" がない
+- /api/sync-user は app_user テーブルに role='student' を設定するが、
+  Supabase Auth の app_metadata には一切書き込んでいない。
+- /api/admin/grant のみが auth.admin.updateUserById() で
+  app_metadata.role を設定しており、スタッフ昇格時しか実行されない。
+- つまり生徒は永久に app_metadata.role = null のまま。
+  requireAuth() は app_metadata.role が 'student' or 'staff' でなければ
+  403 を返すため、全生徒がブロックされる。
+
+影響範囲
+- requireAuth() を使う全エンドポイント:
+  - app/api/reports/monthly/route.ts（GET: レポート閲覧）
+  - src/shared/lib/reportRead.ts（レポート読み取りロジック）
+  - 今後 requireAuth() を使う新規 API すべて
+- 本番環境で全生徒に影響（約20名のβ版ユーザー全員）。
+  現状は手動で SQL を実行して role を設定する必要があり、運用負荷が高い。
+
+Context — 現在の実装
+
+■ /api/sync-user (app/api/sync-user/route.ts):
+  L82-116: app_user テーブルに INSERT（role は DB デフォルトの 'student'）
+  → auth.admin.updateUserById() は呼ばれない
+  → app_metadata.role は null のまま
+
+■ /api/admin/grant (src/shared/lib/grant.ts):
+  L117-119: auth.admin.updateUserById(targetUser.auth_uid, {
+    app_metadata: { role: newRole },
+  })
+  → スタッフ昇格時にのみ app_metadata.role を設定
+  → 生徒には使われない
+
+■ requireAuth (src/shared/lib/requireAuth.ts):
+  L36-38:
+    const role = (authUser.user.app_metadata)?.role
+    if (role !== 'student' && role !== 'staff') {
+      throw new AppError(403, 'FORBIDDEN', 'ユーザーロールを特定できませんでした。')
+    }
+  → app_metadata.role が null/undefined の場合 403
+
+■ docs/security.md の認証フロー:
+  Step 4: "Supabase が JWT を発行（初回は app_metadata.role = null）"
+  Step 7: "管理者が /api/admin/grant を実行し role = 'staff' に昇格"
+  → 生徒の app_metadata.role を設定するステップが存在しない
+
+Scope
+- 変更OK:
+  - app/api/sync-user/route.ts（app_metadata.role 設定を追加）
+  - docs/security.md（認証フローに app_metadata.role 設定ステップを追記）
+  - docs/api.md（sync-user の動作説明に追記）
+  - docs/troubleshooting.md（「ユーザーロールを特定できません」の原因と対処を追記）
+  - CLAUDE.md（既知の問題に追記 or 修正済みとして記録）
+  - tests/（sync-user のテストで app_metadata 設定を検証）
+- 変更NG:
+  - src/shared/lib/requireAuth.ts（app_metadata.role チェックは正しい設計。
+    フォールバックで app_user.role を見る方法もあるが、JWT ベースの
+    一貫したセキュリティモデルを崩すべきではない）
+  - src/shared/lib/grant.ts（スタッフ昇格のロジックは変更不要）
+  - DB スキーマ（変更不要）
+
+Implementation — Step-by-Step
+
+Step 1: /api/sync-user で app_metadata.role を設定する
+  ファイル: app/api/sync-user/route.ts
+
+  1a. 新規ユーザー作成時（L100-116 の else ブロック内）:
+    app_user INSERT の後に auth.admin.updateUserById を追加:
+
+    変更後:
+      } else {
+        // New: Insert (role defaults to 'student')
+        const { data: newUser, error: insertError } = await supabase
+          .from('app_user')
+          .insert({
+            auth_uid: user.id,
+            email: email,
+          })
+          .select('id, role')
+          .single()
+
+        if (insertError) throw new Error(insertError.message)
+        if (!newUser) throw new Error('Failed to create user')
+
+        // Supabase Auth の app_metadata.role も設定する
+        // requireAuth() が JWT の app_metadata.role を参照するため必須
+        const { error: metaError } = await supabase.auth.admin.updateUserById(
+          user.id,
+          { app_metadata: { role: newUser.role } },
+        )
+        if (metaError) {
+          console.error('Failed to set app_metadata.role:', metaError.message)
+          // app_user は作成済みなのでエラーにはしない。
+          // 次回ログイン時のリトライで再設定される（1b 参照）。
+        }
+
+        appUserData = { id: newUser.id, role: newUser.role }
+      }
+
+  1b. 既存ユーザーログイン時（L90-99 の if ブロック内）:
+    既に app_user が存在する場合でも、app_metadata.role が未設定の可能性がある
+    （GFX-35 適用前に作成されたユーザー）。
+    既存ユーザーにも app_metadata.role を設定するリカバリ処理を追加:
+
+    変更後:
+      if (existingUser) {
+        // Exist: Update email only (if changed)
+        const { error: updateError } = await supabase
+          .from('app_user')
+          .update({ email })
+          .eq('id', existingUser.id)
+
+        if (updateError) throw new Error(updateError.message)
+
+        // app_metadata.role が未設定の場合は設定する（GFX-35 以前のユーザー対応）
+        const currentRole = (
+          user.app_metadata as Record<string, string | undefined>
+        )?.role
+        if (currentRole !== existingUser.role) {
+          await supabase.auth.admin.updateUserById(user.id, {
+            app_metadata: { role: existingUser.role },
+          })
+        }
+
+        appUserData = { id: existingUser.id, role: existingUser.role }
+      }
+
+    注意:
+      - currentRole !== existingUser.role で比較するため、
+        既に正しく設定されている場合はスキップ（毎回更新しない）。
+      - スタッフが grant で昇格済みの場合、app_metadata.role = 'staff' と
+        app_user.role = 'staff' が一致するためスキップされる。
+      - grant で昇格後に sync-user が呼ばれても role は上書きされない。
+
+Step 2: ドキュメントを更新する
+
+  2a. docs/security.md — 認証フローを修正:
+    変更前:
+      4. Supabase が JWT を発行（初回は app_metadata.role = null）
+         ↓
+      5. クライアントが /api/sync-user を呼び出し
+        ↓
+      6. Service Role で allowed_email を照合し、status='active' なら
+         app_user テーブルに upsert（role = 'student'）
+
+    変更後:
+      4. Supabase が JWT を発行
+         ↓
+      5. クライアントが /api/sync-user を呼び出し
+         ↓
+      6. Service Role で allowed_email を照合し、status='active' なら
+         app_user テーブルに upsert（role = 'student'）
+         + auth.admin.updateUserById で app_metadata.role = 'student' を設定
+         （既存ユーザーで app_metadata.role が未設定の場合もリカバリ設定）
+
+    「Supabase Auth の app_metadata.role と app_user.role を同期」の記述が
+    grant のみの文脈で書かれているため、sync-user でも同期することを明記する。
+
+  2b. docs/troubleshooting.md — 「ユーザーロールを特定できません」の項目を追記:
+    追加内容:
+      ### 「エラー: ユーザーロールを特定できませんでした。」(403)
+      **原因**: Supabase Auth の app_metadata.role が未設定。
+      GFX-35 以前に作成されたユーザーで発生する可能性がある。
+      **対処**:
+      1. ユーザーに再ログインしてもらう（sync-user がリカバリ設定する）
+      2. 手動で設定する場合:
+         UPDATE auth.users
+         SET raw_app_meta_data = raw_app_meta_data || '{"role": "student"}'::jsonb
+         WHERE email = '対象のメールアドレス';
+
+  2c. docs/api.md — /api/sync-user の動作説明を修正:
+    app_metadata.role の自動設定について追記。
+
+  2d. CLAUDE.md — 既知の問題から削除 or 修正済みとして記録。
+
+Step 3: テストを追加する
+
+  テスト対象:
+  - 新規ユーザー作成時に auth.admin.updateUserById が
+    { app_metadata: { role: 'student' } } で呼ばれる
+  - 既存ユーザーで app_metadata.role が null の場合、
+    updateUserById で role が設定される
+  - 既存ユーザーで app_metadata.role が既に正しい場合、
+    updateUserById は呼ばれない（不要な更新を避ける）
+  - updateUserById が失敗しても sync-user 全体は成功する
+    （エラーはログのみ）
+
+Risks / Follow-ups
+- updateUserById の追加呼び出し:
+  sync-user のレスポンス時間が若干増加する（Auth API 1 回追加）。
+  ただし初回ログイン時のみの追加であり、UX への影響は軽微。
+  既存ユーザーのリカバリは app_metadata.role が一致すればスキップ。
+- JWT の即時反映:
+  updateUserById で app_metadata を更新しても、現在のセッションの JWT は
+  即座には更新されない。ユーザーは次回のトークンリフレッシュ
+  （デフォルト 60 分）または再ログインで新しい JWT を取得する。
+  → sync-user はログインフロー内で呼ばれるため、
+    初回ログイン時は直後にトークンが発行されるので問題ない。
+  → 既存ユーザーのリカバリの場合、再ログインが必要な場合がある。
+- grant との競合:
+  sync-user は app_user.role を参照して app_metadata.role を設定する。
+  grant で既に 'staff' に昇格済みの場合、app_user.role = 'staff' と
+  app_metadata.role = 'staff' が一致するため上書きされない。
+  grant 後に sync-user が呼ばれても安全。
+- 既存β版ユーザーの一括修復:
+  GFX-35 デプロイ後、既存の約20名は次回ログイン時に自動修復される。
+  即座に修復したい場合は以下の SQL を実行:
+    UPDATE auth.users
+    SET raw_app_meta_data = raw_app_meta_data || '{"role": "student"}'::jsonb
+    WHERE id IN (
+      SELECT auth_uid FROM app_user WHERE role = 'student'
+    )
+    AND NOT (raw_app_meta_data ? 'role');
+
+Acceptance Criteria (Done)
+- [ ] 新規ユーザーのログイン後、app_metadata.role = 'student' が設定されている
+- [ ] 既存ユーザー（app_metadata.role 未設定）がログインすると自動修復される
+- [ ] /reports にアクセスしても「ユーザーロールを特定できません」が出ない
+- [ ] スタッフ（app_metadata.role = 'staff'）の role が上書きされない
+- [ ] updateUserById 失敗時も sync-user 全体は成功する
+- [ ] docs/security.md の認証フローが更新されている
+- [ ] docs/troubleshooting.md にエラーの対処法が追記されている
+- [ ] テストが追加されている
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
+## GFX-36: 許可メール一覧の検索・フィルタで画面がリロードされる問題の修正
+
+```text
+[Task Title]
+/admin/allowlist の検索・フィルタ操作時の不要な全画面リロードを解消し、
+デバウンス付きインクリメンタル検索に改善する
+
+Goal
+- 検索バーに1文字入力するたびに画面が「読み込み中…」にフルリプレースされる
+  問題を解消する。
+- ステータスフィルタのプルダウン変更時も同様の問題を解消する。
+- デバウンス（300ms）を導入し、入力が落ち着いてから API を呼ぶようにする。
+- データ更新中も既存のリスト表示を維持し、ローディングインジケータは
+  インライン表示（スピナー等）にする。
+
+Background — なぜ必要か
+- UAT テスト（許可リスト管理: /admin/allowlist）で、検索バーに1文字入力する
+  または ステータスプルダウンを変更するたびに画面全体が「読み込み中…」に
+  フルリプレースされ、非常に使いづらい。
+- 約20名のβ版でも登録件数が増えるにつれ、API レスポンス時間が伸びると
+  さらに UX が悪化する。
+
+Context — 現在の実装と問題点
+
+■ 問題 1: デバウンスがない
+  ファイル: src/features/admin/allowlist/hooks/useAllowlistQuery.ts
+
+  L77: useEffect の依存配列に search と status が直接入っている:
+    useEffect(() => {
+      // ... API fetch ...
+    }, [fetcher, headersMemo, search, status, revision])
+
+  search は検索バーの onChange で即座に更新される（page.tsx L149）。
+  1文字入力するたびに useEffect が発火し、API リクエストが送信される。
+  例: "test" と入力すると "t", "te", "tes", "test" の 4 回 API を叩く。
+
+■ 問題 2: loading 中に全画面がリプレースされる
+  ファイル: app/admin/allowlist/page.tsx
+
+  L75-82:
+    if (isCheckingSession || (loading && !error)) {
+      return (
+        <main>
+          <h1>許可メール一覧</h1>
+          <p>読み込み中…</p>
+        </main>
+      )
+    }
+
+  初回ロード時だけでなく、検索/フィルタ変更によるデータ再取得時にも
+  loading = true になるため、入力欄ごと全画面が「読み込み中…」に置き換わる。
+  → ユーザーは入力中のテキストも消えるため、リロードされたように感じる。
+
+Scope
+- 変更OK:
+  - src/features/admin/allowlist/hooks/useAllowlistQuery.ts
+    （デバウンス導入 + 初回/更新の loading 状態を分離）
+  - app/admin/allowlist/page.tsx
+    （全画面ローディングを初回のみに制限、更新中はインライン表示に変更）
+- 変更NG:
+  - app/api/admin/allowlist/route.ts（API 側は変更不要）
+  - src/features/admin/allowlist/hooks/useAllowlistMutations.ts（変更不要）
+
+Implementation — Step-by-Step
+
+Step 1: useAllowlistQuery にデバウンスを導入する
+  ファイル: src/features/admin/allowlist/hooks/useAllowlistQuery.ts
+
+  方法: search の値をデバウンスしてから useEffect に渡す。
+  外部ライブラリ不要で実装可能。
+
+  1a. デバウンス用の内部 state を追加:
+    const [debouncedSearch, setDebouncedSearch] = useState(search)
+
+    useEffect(() => {
+      const timer = setTimeout(() => setDebouncedSearch(search), 300)
+      return () => clearTimeout(timer)
+    }, [search])
+
+  1b. useEffect の依存配列で search → debouncedSearch に変更:
+    useEffect(() => {
+      // ... API fetch ...
+    }, [fetcher, headersMemo, debouncedSearch, status, revision])
+    //                        ^^^^^^^^^^^^^^^^ デバウンス済みの値を使用
+
+  注意:
+    - status（プルダウン）はデバウンス不要（即座に反映で問題ない）。
+      ただし loading 表示の問題（Step 2）を修正すれば、
+      プルダウン変更時の「リロード感」も解消される。
+    - デバウンス時間 300ms は一般的な推奨値。
+      入力が速いユーザーでも不快にならない程度。
+
+Step 2: 初回ロードと更新中の loading 状態を分離する
+  ファイル: src/features/admin/allowlist/hooks/useAllowlistQuery.ts
+
+  方法: loading を「初回ロード中」と「バックグラウンド更新中」に分離する。
+
+  2a. 状態を追加:
+    const [initialLoading, setInitialLoading] = useState(true)
+    const [fetching, setFetching] = useState(false)
+
+  2b. useEffect 内の loading 管理を変更:
+    useEffect(() => {
+      let mounted = true
+      ;(async () => {
+        try {
+          setFetching(true)  // バックグラウンド更新フラグ
+          setError(null)
+          // ... API fetch ...
+          if (!mounted) return
+          setData(json.data ?? [])
+        } catch (err) {
+          if (!mounted) return
+          setError(err as Error)
+        } finally {
+          if (mounted) {
+            setFetching(false)
+            setInitialLoading(false)  // 初回完了
+          }
+        }
+      })()
+      return () => { mounted = false }
+    }, [fetcher, headersMemo, debouncedSearch, status, revision])
+
+  2c. 返り値を変更:
+    return { data, error, loading: initialLoading, fetching, refetch }
+    // loading: 初回のみ true（全画面ローディング用）
+    // fetching: 更新中（インライン表示用）
+
+Step 3: page.tsx の loading 表示をインライン化する
+  ファイル: app/admin/allowlist/page.tsx
+
+  3a. 全画面ローディングを初回のみに制限:
+    const { data, loading, fetching, error, refetch } = useAllowlistQuery(...)
+
+    変更前 (L75):
+      if (isCheckingSession || (loading && !error)) {
+    変更後:
+      if (isCheckingSession || loading) {
+    // loading は initialLoading のみ true になるため、初回のみ全画面表示
+
+  3b. 更新中のインジケータをリスト上部に追加:
+    登録件数表示の横にスピナーを追加:
+
+    <div className="flex items-center justify-between border-b ...">
+      <div className="space-y-1">
+        <p className="text-sm font-medium text-slate-700">登録件数</p>
+        <p className="text-2xl font-bold text-slate-900">{data?.length ?? 0}</p>
+      </div>
+      {fetching && (
+        <div className="text-sm text-slate-400 flex items-center gap-2">
+          <div className="w-4 h-4 border-2 border-slate-300 border-t-transparent
+                          rounded-full animate-spin" />
+          更新中...
+        </div>
+      )}
+    </div>
+
+Risks / Follow-ups
+- デバウンス中の UX: 300ms の遅延はほぼ気にならないが、
+  入力確定を待っている感覚を補うため、fetching インジケータが有効。
+- status フィルタの即時反映: status 変更はデバウンスしないため即座に API を叩く。
+  loading 表示の改善（Step 2-3）で「リロード感」は解消されるが、
+  短時間に何度もプルダウンを切り替えると不要な API 呼び出しが発生する。
+  → β版規模では問題ない。スケール時は status もデバウンス検討。
+
+Acceptance Criteria (Done)
+- [ ] 検索バーに文字を入力しても画面がフルリプレースされない
+- [ ] ステータスフィルタを変更しても画面がフルリプレースされない
+- [ ] 検索入力後 300ms でデータが更新される（デバウンス動作）
+- [ ] データ更新中は既存のリスト表示が維持され、インラインスピナーが表示される
+- [ ] 初回ロード時は従来通り「読み込み中…」が表示される
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
 ## 4. 実装ロードマップサマリー
 
 ```
@@ -3064,6 +3490,11 @@ Critical: GFX-29
   → 会話継続・メッセージ保存・時系列の統合修正（チャット基本動作の根幹）
   → マイグレーション適用が必要（messages テーブルに seq 列追加）
 
+Critical (Blocker): GFX-35
+  → sync-user で生徒の app_metadata.role = 'student' を自動設定
+  → 全生徒が requireAuth() を通過できない致命的バグの修正
+  → 既存ユーザーの自動リカバリ + ドキュメント更新含む
+
 Hotfix: GFX-27, GFX-28
   → GFX-27: ログインリダイレクト先修正（1 行変更）
   → GFX-28: UsageBadge リアルタイム更新（UAT TC_B_010 対応）
@@ -3082,6 +3513,9 @@ Gate H（GFX-31 の前に実施）: GFX-32
 
 Sprint 5: GFX-30
   → HEIC/HEIF 画像のクライアント変換対応（iPhone ユーザー UX）
+
+Sprint 6: GFX-36
+  → 許可メール一覧の検索・フィルタ即時リロード解消（デバウンス + インラインローディング）
 
 Backlog: GFX-19, GFX-20, GFX-21, GFX-22, GFX-23, GFX-24, GFX-25, GFX-26
   → 優先度に応じて順次対応
