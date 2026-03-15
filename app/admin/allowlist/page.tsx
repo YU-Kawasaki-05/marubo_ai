@@ -63,7 +63,7 @@ export default function AllowlistPage() {
     return token ? { Authorization: `Bearer ${token}` } : undefined
   }, [token])
 
-  const { data, loading, error, refetch } = useAllowlistQuery({
+  const { data, loading, fetching, error, refetch } = useAllowlistQuery({
     search: search || undefined,
     status: statusFilter,
     headers, // 定義済みの headers を渡す
@@ -72,7 +72,7 @@ export default function AllowlistPage() {
   const { updateAllowedEmail, importCsv } = useAllowlistMutations({ headers })
 
   // セッション確認中またはデータ読み込み中の表示
-  if (isCheckingSession || (loading && !error)) {
+  if (isCheckingSession || loading) {
     return (
       <main className="mx-auto max-w-4xl p-6">
         <h1 className="text-2xl font-bold">許可メール一覧</h1>
@@ -170,6 +170,12 @@ export default function AllowlistPage() {
             <p className="text-sm font-medium text-slate-700">登録件数</p>
             <p className="text-2xl font-bold text-slate-900">{data?.length ?? 0}</p>
           </div>
+          {fetching && (
+            <div className="flex items-center gap-2 text-sm text-slate-400">
+              <div className="h-4 w-4 animate-spin rounded-full border-2 border-slate-300 border-t-transparent" />
+              更新中...
+            </div>
+          )}
         </div>
         <div className="divide-y divide-slate-200">
           {data?.map((item) => (

@@ -1,9 +1,11 @@
 /** @file
  * 許可メール一覧データ取得フック。
  * 入力: headers（認証トークン）、search、status フィルタ。
- * 出力: { data, error, loading, refetch }。
+ * 出力: { data, error, loading, fetching, refetch }。
  * 依存: React hooks。
  * セキュリティ: Bearer トークンを headers 経由で送信。
+ * 備考: search にはデバウンス（300ms）を適用し不要な API 呼び出しを抑制。
+ *   loading は初回ロード時のみ true。更新中は fetching が true になる。
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
@@ -32,8 +34,16 @@ export function useAllowlistQuery(options: UseAllowlistQueryOptions = {}) {
   const { fetcher = fetch, headers, search, status = 'all' } = options
   const [data, setData] = useState<AllowedEmail[] | null>(null)
   const [error, setError] = useState<Error | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [initialLoading, setInitialLoading] = useState(true)
+  const [fetching, setFetching] = useState(false)
   const [revision, setRevision] = useState(0)
+
+  // search のデバウンス（300ms）
+  const [debouncedSearch, setDebouncedSearch] = useState(search)
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedSearch(search), 300)
+    return () => clearTimeout(timer)
+  }, [search])
 
   const headersKey = headers ? JSON.stringify(headers) : ''
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -45,11 +55,11 @@ export function useAllowlistQuery(options: UseAllowlistQueryOptions = {}) {
     let mounted = true
     ;(async () => {
       try {
-        setLoading(true)
+        setFetching(true)
         setError(null)
         // URLSearchParams を使ってクエリパラメータを構築（相対パスを利用）
         const params = new URLSearchParams()
-        if (search) params.set('search', search)
+        if (debouncedSearch) params.set('search', debouncedSearch)
         if (status && status !== 'all') params.set('status', status)
 
         const queryValue = params.toString()
@@ -67,14 +77,17 @@ export function useAllowlistQuery(options: UseAllowlistQueryOptions = {}) {
         if (!mounted) return
         setError(err as Error)
       } finally {
-        if (mounted) setLoading(false)
+        if (mounted) {
+          setFetching(false)
+          setInitialLoading(false)
+        }
       }
     })()
 
     return () => {
       mounted = false
     }
-  }, [fetcher, headersMemo, search, status, revision])
+  }, [fetcher, headersMemo, debouncedSearch, status, revision])
 
-  return { data, error, loading, refetch }
+  return { data, error, loading: initialLoading, fetching, refetch }
 }
