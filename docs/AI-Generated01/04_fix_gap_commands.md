@@ -97,6 +97,7 @@
 | GFX-30 | (新規) | HEIC/HEIF 画像のクライアント変換対応 | Sprint 5 |
 | GFX-31 | (新規) | 添付画像を AI（Vision）に渡すパイプライン実装 | Critical |
 | GFX-32 | (新規) | Supabase Storage バケット・ポリシー設定（人間作業） | Gate H |
+| GFX-33 | (新規) | 画像添付メッセージの保存・表示修正（テキストなし送信対応） | Critical |
 
 ---
 
@@ -2396,6 +2397,318 @@ Acceptance Criteria (Done)
 
 ---
 
+## GFX-33: 画像添付メッセージの保存・表示の修正（テキストなし送信対応 + リアルタイムサムネイル）
+
+```text
+[Task Title]
+画像のみ送信時のメッセージ保存漏れ修正、送信直後のサムネイル表示、
+「構造化データを受信中...」フォールバック表示の改善
+
+Goal
+- 画像のみ（テキストなし）で送信した場合でも、ユーザーメッセージと
+  添付メタデータが正しく DB に保存されるようにする。
+- 画像送信直後に、リロードせずともメッセージバブル内に
+  添付画像のサムネイルが表示されるようにする。
+- テキストなし送信時の「(構造化データを受信中...)」フォールバック表示を
+  適切なメッセージ（または添付サムネイルのみ表示）に改善する。
+
+Background — なぜ必要か
+- UAT テスト（TC_C_001〜）で以下の 3 症状が発生:
+  1. 新規チャットに画像のみを送信 → リロード後、AI の応答だけが表示される
+     （ユーザーのメッセージと添付画像が消えている）
+  2. 画像を送信した直後、メッセージバブルに画像サムネイルが表示されない
+     （リロードすると表示されるケースもある）
+  3. テキストなしで画像のみ送信すると、ユーザーメッセージに
+     「(構造化データを受信中...)」と表示され、以降のメッセージ送信でも消えない
+- 塾チャットボットの主要ユースケースとして、教科書や問題用紙の写真だけを
+  送って質問するケースが想定されるため、テキストなし送信は正常フローとして
+  サポートする必要がある。
+
+Context — 現在の実装と問題点
+
+■ 問題 1: テキストなし送信時に messages/attachments が DB に保存されない
+
+  ファイル: app/api/chat/route.ts
+
+  L189: const userText = getUIMessageText(lastUserMessage)
+    → テキストなし送信時は userText = '' (falsy)
+
+  L233-240:
+    if (userText) {  // ← '' は falsy → スキップ
+      await supabaseAdmin.from('messages').insert({
+        id: userMessageId,
+        conversation_id: conversationId,
+        role: 'user',
+        content: userText,
+      })
+    }
+    → ユーザーメッセージが DB に保存されない
+
+  L249:
+    if (attachmentInputs.length > 0 && userText) {  // ← userText が falsy → スキップ
+      const attachmentRows = attachmentInputs.map(...)
+      await supabaseAdmin.from('attachments').insert(attachmentRows)
+    }
+    → 添付メタデータも DB に保存されない
+
+  L265:
+    if (isNewConversation && userText && assistantText) {
+      // LLM タイトル生成
+    }
+    → テキストなしだとタイトルが LLM 生成されない（makeTitle のフォールバックは動く）
+
+  結果: リロード後に GET /api/conversations/[id] が返すメッセージ一覧に
+    ユーザーメッセージが含まれず、AI 応答のみが表示される。
+    添付画像のメタデータも存在しないため、サムネイルも表示されない。
+
+■ 問題 2: 送信直後にメッセージバブルに画像サムネイルが表示されない
+
+  ファイル: src/features/chat/components/ChatInterface.tsx
+
+  ChatSession コンポーネントの attachmentsByMessageId は、ChatLoader が
+  GET /api/conversations/[id] のレスポンスから構築するマップ (L443-448)。
+
+  sendMessage で追加される UIMessage にはテキスト parts のみが含まれ、
+  添付画像のメタデータは含まれない。そのため、新規送信メッセージの
+  MessageBubble には attachments prop が undefined となり、
+  AttachmentThumbnails が描画されない。
+
+  リロード後は ChatLoader が API から取得するため、その時点で
+  attachments テーブルにデータがあればサムネイルが表示される。
+  ただし問題 1 でデータが保存されていない場合は、リロード後も表示されない。
+
+■ 問題 3:「(構造化データを受信中...)」フォールバック表示
+
+  ファイル: src/features/chat/components/MessageBubble.tsx (L201-208)
+
+  sendMessage({ text: '' }) でテキストなしのユーザーメッセージが作成されると:
+    - parts = [{ type: 'text', text: '' }]
+    - rawContent = '' (parts の text が空文字)
+    - textContent = '' (normalizeMathDelimiters('') = '')
+    - !textContent = true
+    - message.parts.length > 0 = true (空テキスト part が 1 つある)
+    → フォールバック「(構造化データを受信中...)」が表示される
+
+  このフォールバックは本来 Tool calls 等の構造化レスポンス用に設計されたもので、
+  テキストなし + 画像添付のユーザーメッセージでは不適切。
+
+Scope
+- 変更OK:
+  - app/api/chat/route.ts（テキストなし送信時の保存ロジック修正）
+  - src/features/chat/components/ChatInterface.tsx（送信直後の添付メタを管理）
+  - src/features/chat/components/MessageBubble.tsx（フォールバック表示の改善）
+  - tests/api/chat-conversations.integration.test.ts（テキストなし送信のテスト追加）
+- 変更NG:
+  - app/api/attachments/sign/route.ts（署名 URL 発行は変更不要）
+  - app/api/conversations/[id]/route.ts（既に attachments を正しく返している）
+  - src/features/chat/hooks/useImageAttachments.ts（アップロードロジックは変更不要）
+  - DB スキーマ（既存テーブル構造で対応可能）
+
+Implementation — Step-by-Step
+
+Step 1: テキストなし送信時にもユーザーメッセージを DB に保存する
+  ファイル: app/api/chat/route.ts
+
+  1a. ユーザーメッセージ保存の条件を修正 (L233):
+    変更前:
+      if (userText) {
+        await supabaseAdmin.from('messages').insert({
+          id: userMessageId,
+          ...
+          content: userText,
+        })
+      }
+    変更後:
+      // テキストまたは添付がある場合にユーザーメッセージを保存
+      // 画像のみ送信時は content が空文字になるが、
+      // attachments テーブルとの紐付けのためにレコードは必要
+      const hasUserContent = userText || attachmentInputs.length > 0
+      if (hasUserContent) {
+        await supabaseAdmin.from('messages').insert({
+          id: userMessageId,
+          conversation_id: conversationId,
+          role: 'user' as const,
+          content: userText || '',  // 画像のみの場合は空文字
+        })
+      }
+
+  1b. 添付保存の条件を修正 (L249):
+    変更前:
+      if (attachmentInputs.length > 0 && userText) {
+    変更後:
+      if (attachmentInputs.length > 0 && hasUserContent) {
+    あるいはシンプルに:
+      if (attachmentInputs.length > 0) {
+    （hasUserContent が true のときのみ userMessageId が有効な INSERT 済み ID になるため、
+     hasUserContent チェックは 1a で保証される。
+     ただし安全のため attachmentInputs.length > 0 だけで十分 ——
+     1a で hasUserContent = true ならメッセージは INSERT 済み。）
+
+  1c. LLM タイトル生成の条件を修正 (L265):
+    変更前:
+      if (isNewConversation && userText && assistantText) {
+    変更後:
+      if (isNewConversation && (userText || attachmentInputs.length > 0) && assistantText) {
+    画像のみ送信でもタイトルを生成するため。
+    ただし LLM への prompt で userText が空の場合は assistantText のみから生成:
+      prompt: userText
+        ? `ユーザー: ${userText.slice(0, 200)}\nAI: ${assistantText.slice(0, 200)}`
+        : `AI: ${assistantText.slice(0, 200)}`
+
+Step 2: 送信直後のメッセージバブルに添付画像サムネイルを表示する
+  ファイル: src/features/chat/components/ChatInterface.tsx
+
+  方法: ChatSession 内で「送信済み添付メタデータ」をローカルステートで保持し、
+  sendMessage が返す UIMessage の ID と紐付けて attachmentsByMessageId にマージする。
+
+  2a. ChatSession に送信済み添付を追跡する state を追加:
+    const [localAttachments, setLocalAttachments] = useState<
+      Record<string, MessageAttachment[]>
+    >({})
+
+  2b. onSubmit 内で、sendMessage 完了後に添付メタを記録する:
+    sendMessage 呼び出し後:
+      // sendMessage が追加した最新の user メッセージの ID を取得
+      // messages 配列から最新の user メッセージを探す
+    ただし、sendMessage は Promise を返し、完了後に messages が更新されている。
+    useChat の messages は非同期更新のため、sendMessage 完了直後では
+    最新のメッセージ ID が取得できない可能性がある。
+
+    代替方法: sendMessage の前にメッセージ ID を予測するのは困難なため、
+    useEffect で messages の変化を監視し、添付付きで送信した直後の
+    新しい user メッセージに対して添付メタを紐付ける。
+
+    実装案:
+      // onSubmit 内で添付メタを一時保存
+      const pendingAttachmentsRef = useRef<AttachmentMeta[] | null>(null)
+
+      // onSubmit の sendMessage 前に:
+      if (attachmentMeta.length > 0) {
+        pendingAttachmentsRef.current = attachmentMeta
+      }
+
+      // useEffect で messages の変化を監視
+      useEffect(() => {
+        if (!pendingAttachmentsRef.current) return
+        // 最新の user メッセージを探す
+        const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')
+        if (lastUserMsg && !localAttachments[lastUserMsg.id]) {
+          const meta = pendingAttachmentsRef.current
+          setLocalAttachments(prev => ({
+            ...prev,
+            [lastUserMsg.id]: meta.map(a => ({
+              id: crypto.randomUUID(),
+              storagePath: a.storagePath,
+              mimeType: a.mimeType,
+              sizeBytes: a.size,
+            })),
+          }))
+          pendingAttachmentsRef.current = null
+        }
+      }, [messages, localAttachments])
+
+  2c. MessageBubble に渡す attachments を統合する:
+    <MessageBubble
+      key={m.id}
+      message={m}
+      attachments={
+        attachmentsByMessageId[m.id] ?? localAttachments[m.id]
+      }
+    />
+
+  注意:
+    - localAttachments は送信セッション中のみ有効。
+      リロード後は ChatLoader が API から取得した attachmentsByMessageId に
+      切り替わるため、問題 1 の修正（DB 保存）が前提条件。
+    - localAttachments は ChatSession の key={conversationId || 'new'} で
+      セッション切り替え時にリセットされる。
+
+Step 3: MessageBubble の「構造化データを受信中...」表示を改善する
+  ファイル: src/features/chat/components/MessageBubble.tsx
+
+  3a. フォールバック表示の条件を改善 (L201-208):
+    変更前:
+      {!textContent && message.parts && message.parts.length > 0 && (
+        <div className="text-xs text-gray-500 mt-1 italic">
+          (構造化データを受信中...)
+        </div>
+      )}
+    変更後:
+      {!textContent && !hasAttachments && message.parts && message.parts.length > 0 && (
+        <div className="text-xs text-gray-500 mt-1 italic">
+          (構造化データを受信中...)
+        </div>
+      )}
+    → 添付画像がある場合はフォールバック表示を抑制。
+      画像のみ送信時に画像サムネイルだけが表示される（テキストなしは自然）。
+
+  3b. ユーザーメッセージのテキスト表示 (L193-195):
+    テキストなし + 画像ありの場合、空の <div> が表示される。
+    これは問題ないが、意図的であることを明示するためコメントを追加:
+      {isUser ? (
+        // テキストがない場合（画像のみ送信）は空表示。
+        // 添付サムネイルが下に表示される。
+        <div className="whitespace-pre-wrap">{textContent}</div>
+      ) : ( ... )}
+
+  オプション 3c: テキストなし + 画像ありのユーザーメッセージに
+    プレースホルダー表示を追加（UX 向上）:
+      {isUser && !textContent && hasAttachments && (
+        <p className="text-sm text-blue-200 italic">画像を送信しました</p>
+      )}
+    → これは必須ではないが、画像だけのバブルに何もテキストがないのは
+      ユーザーにとって分かりにくい可能性がある。判断は実装者に委ねる。
+
+Step 4: テストを追加・修正する
+  ファイル: tests/api/chat-conversations.integration.test.ts
+
+  追加テストケース:
+  - テキストなし + 画像添付でメッセージ送信
+    → ユーザーメッセージが content: '' で DB に保存される
+  - テキストなし + 画像添付で attachments テーブルにレコードが作成される
+  - テキストなし + 画像添付の会話をリロード（GET /api/conversations/[id]）
+    → ユーザーメッセージ + 添付画像が返される
+  - テキストあり + 画像添付は従来通り動作する（既存テスト維持）
+  - テキストなし + 画像なしは送信されない（クライアント側バリデーションで担保）
+
+Risks / Follow-ups
+- DB の content カラム: messages.content が NOT NULL 制約の場合、
+  空文字 '' でも INSERT は成功するが、NULL は不可。
+  現在の実装は content: userText || '' で空文字を使うため問題ない。
+  → 確認: messages テーブルの content カラムが NOT NULL かどうか。
+    NOT NULL なら '' で OK。NULL 許可なら '' でも NULL でもどちらでも良い。
+- sendMessage({ text: '' }) の AI SDK 挙動:
+  AI SDK v6 は空テキストのユーザーメッセージを正常に処理するが、
+  OpenAI API に空テキスト + 画像 のみが送信されることを確認する必要がある。
+  → GFX-31 で画像パートを追加済みのため、空テキスト + ImagePart は有効。
+- localAttachments の管理:
+  useEffect による紐付けは、messages 配列の更新タイミングに依存する。
+  AI SDK v6 の useChat が sendMessage 完了後にどのタイミングで messages を
+  更新するかを確認する必要がある。
+  → sendMessage は Promise を返し、完了後に messages は更新済みのはず。
+    ただし React の state 更新は非同期のため、次の render で反映される。
+
+前提条件
+- GFX-31（Image-to-LLM パイプライン）が完了していること。
+  テキストなしで画像のみ送信した場合に AI が画像を認識するためには、
+  GFX-31 で実装した ImagePart 追加が必要。
+- GFX-32（Storage 設定）が完了していること。
+  AttachmentThumbnails が署名 URL を取得するために Storage ポリシーが必要。
+
+Acceptance Criteria (Done)
+- [ ] テキストなし + 画像のみで送信した場合、ユーザーメッセージが DB に保存される
+- [ ] テキストなし + 画像のみで送信した場合、attachments が DB に保存される
+- [ ] リロード後に、ユーザーメッセージと添付画像サムネイルが正しく表示される
+- [ ] 送信直後（リロードなし）に、ユーザーメッセージバブルに添付画像サムネイルが表示される
+- [ ] テキストなし + 画像送信時に「(構造化データを受信中...)」が表示されない
+- [ ] テキストあり + 画像送信は従来通り動作する（デグレなし）
+- [ ] テキストのみ（画像なし）送信は従来通り動作する（デグレなし）
+- [ ] テストが追加されている
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
 ## 4. 実装ロードマップサマリー
 
 ```
@@ -2421,10 +2734,11 @@ Hotfix: GFX-27, GFX-28
   → GFX-27: ログインリダイレクト先修正（1 行変更）
   → GFX-28: UsageBadge リアルタイム更新（UAT TC_B_010 対応）
 
-Critical: GFX-31
-  → 添付画像を AI（gpt-4o-mini Vision）に渡す Image-to-LLM パイプライン実装
-  → 画像添付機能の中核。GFX-32（Storage 設定）が前提条件
-  → TC_C_001（画像添付 UAT）の必須修正
+Critical: GFX-31, GFX-33（直列: GFX-31 → GFX-33）
+  → GFX-31: 添付画像を AI（gpt-4o-mini Vision）に渡す Image-to-LLM パイプライン実装
+  → GFX-33: 画像添付メッセージの保存・表示修正（テキストなし送信対応 + リアルタイムサムネイル）
+  → GFX-31 と GFX-33 は chat/route.ts を共に変更するため直列実行
+  → GFX-32（Storage 設定）が前提条件
 
 Gate H（GFX-31 の前に実施）: GFX-32
   → Supabase Storage の attachments バケット作成 + ポリシー設定（人間作業）
