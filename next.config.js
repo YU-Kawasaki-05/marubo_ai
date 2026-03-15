@@ -1,6 +1,6 @@
 const isDev = process.env.NODE_ENV !== 'production'
 
-const IMG = ["'self'", 'https://*.supabase.co']
+const IMG = ["'self'", 'blob:', 'https://*.supabase.co']
 const CONNECT = ["'self'", 'https://*.supabase.co']
 
 const csp = [
