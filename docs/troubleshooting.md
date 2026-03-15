@@ -414,6 +414,42 @@ pnpm typecheck
 
 ---
 
+## 「エラー: ユーザーロールを特定できませんでした。」(403)
+
+### 症状
+
+* `/reports` や `requireAuth()` を使う API にアクセスすると 403 エラー
+* エラーメッセージ: 「ユーザーロールを特定できませんでした。」
+
+### 原因
+
+Supabase Auth の `app_metadata.role` が未設定。
+GFX-35 以前に作成されたユーザーで発生する可能性がある。
+`/api/sync-user` が `auth.admin.updateUserById` で `app_metadata.role` を設定するようになったが、
+それ以前に作成されたユーザーは `app_metadata.role = null` のまま。
+
+### 解決方法
+
+1. **再ログイン**: ユーザーに再ログインしてもらう（sync-user がリカバリ設定する）
+2. **手動修復（SQL）**: Supabase Dashboard の SQL Editor で実行:
+
+```sql
+-- 特定ユーザーを修復
+UPDATE auth.users
+SET raw_app_meta_data = raw_app_meta_data || '{"role": "student"}'::jsonb
+WHERE email = '対象のメールアドレス';
+
+-- 全生徒を一括修復
+UPDATE auth.users
+SET raw_app_meta_data = raw_app_meta_data || '{"role": "student"}'::jsonb
+WHERE id IN (
+  SELECT auth_uid FROM app_user WHERE role = 'student'
+)
+AND NOT (raw_app_meta_data ? 'role');
+```
+
+---
+
 ## 関連ドキュメント
 
 * [RLS ポリシー](./rls.md)

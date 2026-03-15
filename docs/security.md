@@ -35,11 +35,14 @@
    ↓
 3. Google 認証後、Supabase へコールバック
    ↓
-4. Supabase が JWT を発行（初回は app_metadata.role = null）
+4. Supabase が JWT を発行
    ↓
 5. クライアントが /api/sync-user を呼び出し
   ↓
-6. Service Role で allowed_email を照合し、`status='active'` なら app_user テーブルに upsert（role = 'student'）
+6. Service Role で allowed_email を照合し、`status='active'` なら
+   app_user テーブルに upsert（role = 'student'）
+   + auth.admin.updateUserById で app_metadata.role = 'student' を設定
+   （既存ユーザーで app_metadata.role が未設定の場合もリカバリ設定）
    ↓
 7. （必要に応じて）管理者が /api/admin/grant を実行し role = 'staff' に昇格
    ↓

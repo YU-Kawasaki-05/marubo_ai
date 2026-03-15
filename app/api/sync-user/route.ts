@@ -1,3 +1,14 @@
+/** @file
+ * `/api/sync-user` Route Handler
+ * 機能：ログイン時にユーザーを許可リストと照合し、app_user を作成/更新する。
+ *   初回作成時および app_metadata.role 未設定時に auth.app_metadata.role を
+ *   自動設定し、requireAuth() を通過可能にする。
+ * 入力：Authorization: Bearer <token>
+ * 出力：{ appUserId, role, allowedEmailStatus }
+ * 依存：Supabase Auth (admin), app_user テーブル, allowed_email テーブル
+ * セキュリティ：Service Role で app_metadata を更新。role の上書きは行わない。
+ */
+
 import { type NextRequest } from 'next/server'
 
 import { AppError, errorResponse } from '../../../src/shared/lib/errors'
@@ -93,9 +104,23 @@ export async function POST(req: NextRequest) {
         .from('app_user')
         .update({ email })
         .eq('id', existingUser.id)
-      
+
       if (updateError) throw new Error(updateError.message)
-      
+
+      // app_metadata.role が未設定の場合はリカバリ設定（GFX-35 以前のユーザー対応）
+      const currentRole = (
+        user.app_metadata as Record<string, string | undefined>
+      )?.role
+      if (currentRole !== existingUser.role) {
+        const { error: metaError } = await supabase.auth.admin.updateUserById(
+          user.id,
+          { app_metadata: { role: existingUser.role } },
+        )
+        if (metaError) {
+          console.error('Failed to set app_metadata.role:', metaError.message)
+        }
+      }
+
       appUserData = { id: existingUser.id, role: existingUser.role }
     } else {
       // New: Insert (role defaults to 'student')
@@ -108,10 +133,20 @@ export async function POST(req: NextRequest) {
         })
         .select('id, role')
         .single()
-        
+
       if (insertError) throw new Error(insertError.message)
       if (!newUser) throw new Error('Failed to create user')
-        
+
+      // Supabase Auth の app_metadata.role を設定（requireAuth() が参照するため必須）
+      const { error: metaError } = await supabase.auth.admin.updateUserById(
+        user.id,
+        { app_metadata: { role: newUser.role } },
+      )
+      if (metaError) {
+        console.error('Failed to set app_metadata.role:', metaError.message)
+        // app_user は作成済みなのでエラーにしない。次回ログイン時にリカバリされる。
+      }
+
       appUserData = { id: newUser.id, role: newUser.role }
     }
 
