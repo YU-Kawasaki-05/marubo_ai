@@ -1,8 +1,8 @@
 'use client'
 
 import Link from 'next/link'
-import { useRouter } from 'next/navigation'
-import { useCallback, useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { Suspense, useCallback, useState, useEffect } from 'react'
 
 import { AllowlistGuard } from '@features/allowlist/components/AllowlistGuard'
 import { ChatInterface } from '@features/chat/components/ChatInterface'
@@ -12,9 +12,12 @@ import { LogoutButton } from '@shared/components/LogoutButton'
 import { SessionExpiredModal } from '@shared/components/SessionExpiredModal'
 import { getSupabaseBrowserClient } from '@shared/lib/supabaseClient'
 
-export default function ChatPage() {
+function ChatPageContent() {
   const router = useRouter()
-  const [selectedId, setSelectedId] = useState<string>('')
+  const searchParams = useSearchParams()
+
+  // URL の ?c=xxx から会話 ID を初期化（リロード耐性）
+  const [selectedId, setSelectedId] = useState<string>(searchParams.get('c') ?? '')
   const [token, setToken] = useState<string | null>(null)
   const [showSessionExpired, setShowSessionExpired] = useState(false)
 
@@ -24,6 +27,25 @@ export default function ChatPage() {
   const [usageRefreshKey, setUsageRefreshKey] = useState(0)
   // モバイルドロワーの開閉状態
   const [isSidebarOpen, setIsSidebarOpen] = useState(false)
+
+  // URL パラメータの変化を監視（ブラウザの戻る/進むボタン対応）
+  useEffect(() => {
+    const idFromUrl = searchParams.get('c') ?? ''
+    if (idFromUrl !== selectedId) {
+      setSelectedId(idFromUrl)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
+  // URL を更新するラッパー関数
+  const navigateToConversation = useCallback((id: string) => {
+    setSelectedId(id)
+    if (id) {
+      router.replace(`/chat?c=${id}`, { scroll: false })
+    } else {
+      router.replace('/chat', { scroll: false })
+    }
+  }, [router])
 
   // 認証トークンの取得と監視
   useEffect(() => {
@@ -63,22 +85,30 @@ export default function ChatPage() {
     router.push('/login')
   }, [router])
 
-  // 新規チャットが作成されたときのコールバック（サイドバー更新 + ID選択）
-  const handleConversationCreated = (id: string) => {
-    setSelectedId(id)
-    setSidebarKey(prev => prev + 1)
-  }
+  // 新規チャットが作成されたときのコールバック（URL 更新 + サイドバー更新）
+  const handleConversationCreated = useCallback((id: string) => {
+    navigateToConversation(id)
+    setSidebarKey((prev) => prev + 1)
+  }, [navigateToConversation])
 
-  // サイドバーで会話が選択されたとき（モバイルドロワーも閉じる）
-  const handleSelect = (id: string) => {
-    setSelectedId(id)
+  // サイドバーで会話が選択されたとき（URL 更新 + モバイルドロワーも閉じる）
+  const handleSelect = useCallback((id: string) => {
+    navigateToConversation(id)
     setIsSidebarOpen(false)
-  }
+  }, [navigateToConversation])
+
+  // 新規チャットボタン専用ハンドラ（selectedId が既に '' でも強制リセット）
+  const handleNewChat = useCallback(() => {
+    router.replace('/chat', { scroll: false })
+    setSelectedId('')
+    setSidebarKey((prev) => prev + 1)
+    setIsSidebarOpen(false)
+  }, [router])
 
   return (
     <AllowlistGuard redirectToHome={false}>
-      {/* 
-        モバイルブラウザのアドレスバーによるレイアウト崩れを防ぐため 
+      {/*
+        モバイルブラウザのアドレスバーによるレイアウト崩れを防ぐため
         h-[100dvh] (Dynamic Viewport Height) を使用
       */}
       <div className="flex flex-col h-[100dvh] bg-gray-50">
@@ -156,6 +186,7 @@ export default function ChatPage() {
                     token={token}
                     selectedId={selectedId}
                     onSelect={handleSelect}
+                    onNewChat={handleNewChat}
                   />
                 </div>
               </aside>
@@ -170,12 +201,14 @@ export default function ChatPage() {
                 token={token}
                 selectedId={selectedId}
                 onSelect={handleSelect}
+                onNewChat={handleNewChat}
               />
             </aside>
           )}
 
           <main className="flex-1 overflow-hidden relative flex flex-col">
             <ChatInterface
+              key={selectedId || `new-${sidebarKey}`}
               token={token}
               conversationId={selectedId || null}
               onConversationCreated={handleConversationCreated}
@@ -189,5 +222,13 @@ export default function ChatPage() {
         onConfirm={handleSessionExpiredConfirm}
       />
     </AllowlistGuard>
+  )
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense fallback={<div className="flex h-[100dvh] items-center justify-center text-gray-400">読み込み中...</div>}>
+      <ChatPageContent />
+    </Suspense>
   )
 }
