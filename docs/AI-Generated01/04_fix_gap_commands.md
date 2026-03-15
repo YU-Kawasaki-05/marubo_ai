@@ -95,6 +95,8 @@
 | GFX-28 | (新規) | UsageBadge のリアルタイム更新 | Hotfix |
 | GFX-29 | (新規) | 会話継続・メッセージ保存・時系列の修正 | Critical |
 | GFX-30 | (新規) | HEIC/HEIF 画像のクライアント変換対応 | Sprint 5 |
+| GFX-31 | (新規) | 添付画像を AI（Vision）に渡すパイプライン実装 | Critical |
+| GFX-32 | (新規) | Supabase Storage バケット・ポリシー設定（人間作業） | Gate H |
 
 ---
 
@@ -2113,6 +2115,287 @@ Acceptance Criteria (Done)
 
 ---
 
+## GFX-31: 添付画像を AI（gpt-4o-mini Vision）に渡す Image-to-LLM パイプライン実装
+
+```text
+[Task Title]
+添付画像を OpenAI gpt-4o-mini の Vision 入力として渡し、AI に画像認識・回答させる
+
+Goal
+- ユーザーが添付した画像を AI（gpt-4o-mini）が認識し、画像の内容を踏まえた回答を返す。
+- 現状: 画像は Supabase Storage にアップロードされ、DB にメタデータが保存されるが、
+  OpenAI API にはテキストメッセージのみが送信されており、画像が渡されていない。
+- gpt-4o-mini は Vision（画像入力）に対応しているため、
+  streamText の messages に ImagePart を追加するだけで画像認識が可能になる。
+
+Background — なぜ必要か
+- TC_C_001（JPEG 画像の添付とチャット送信）のテストで、
+  AI が画像の内容を踏まえた回答を返さず、汎用的な学習トピック提案のみを返す。
+- 画像添付機能（BE-08〜11, FE-05〜06）は「アップロード・保存・表示」を実装したが、
+  「AI への画像入力」が欠落していた。
+- β版の塾チャットボットとして、教科書の写真や問題用紙の画像を読ませて
+  質問に答える機能は中核的な価値であり、画像添付の主要ユースケース。
+
+Context — 現在の実装と問題点
+
+■ 現在の添付フロー（クライアント→サーバー）:
+  1. クライアント: POST /api/attachments/sign で署名 URL を取得
+  2. クライアント: 署名 URL に PUT でファイルをアップロード
+  3. クライアント: sendMessage の body.attachments[] に
+     { storagePath, mimeType, size } を含めて送信
+  → ここまでは正常に動作している。
+
+■ 問題箇所 — chat/route.ts (L84-235):
+  4. サーバー: requestBody.attachments を受け取る (L90)
+     const attachmentInputs = requestBody.attachments ?? []
+  5. サーバー: convertSafeMessages(uiMessages) でテキストメッセージを変換 (L110)
+  6. サーバー: streamText({ model, system, messages }) を呼び出す (L151-154)
+     ★ ここで messages にはテキストのみ。attachmentInputs の画像は含まれない。
+  7. サーバー: onFinish 内で attachmentInputs を attachments テーブルに保存 (L195-204)
+     → DB 保存のみに使われ、AI には渡されていない。
+
+■ AI SDK v6 の ImagePart 形式:
+  { type: 'image', image: URL | base64 | Uint8Array, mediaType?: string }
+  → streamText の messages に UserModelMessage の content として含める:
+     { role: 'user', content: [
+       { type: 'text', text: 'この画像に何が写っていますか？' },
+       { type: 'image', image: new URL(signedUrl), mediaType: 'image/jpeg' },
+     ]}
+
+■ 関連する問題 — 「(構造化データを受信中...)」表示:
+  MessageBubble.tsx (L201-208) のフォールバック表示が出ている。
+  AI が画像なしのテキストのみで応答した場合、レスポンスの形式が
+  期待通りのテキストパートにならない可能性がある。
+  GFX-31 の修正で AI が画像を踏まえた適切なテキスト応答を返すことで
+  解消される可能性が高い。解消しない場合は別途調査。
+
+Scope
+- 変更OK:
+  - app/api/chat/route.ts（streamText に ImagePart を追加するメインの変更）
+  - src/shared/utils/ai-message-converter.ts（必要に応じて ImagePart 対応）
+  - tests/api/chat-conversations.integration.test.ts（画像付きメッセージのテスト追加）
+- 変更NG:
+  - クライアントコード（既に正しく attachments を送信している）
+  - app/api/attachments/sign/route.ts（署名 URL 発行は正常に動作）
+  - DB スキーマ（attachments テーブルは変更不要）
+  - src/features/chat/components/*（表示側は変更不要）
+
+Implementation — Step-by-Step
+
+Step 1: Storage から画像の署名 URL を取得する
+  ファイル: app/api/chat/route.ts
+  位置: L110 (convertSafeMessages の後、streamText の前)
+
+  attachmentInputs がある場合、supabaseAdmin を使って Storage の署名 URL を取得する:
+
+    // 添付画像の署名 URL を取得（AI に渡すため）
+    let imageUrls: { url: string; mimeType: string }[] = []
+    if (attachmentInputs.length > 0) {
+      const signResults = await Promise.all(
+        attachmentInputs.map(async (a) => {
+          const { data } = await supabaseAdmin.storage
+            .from('attachments')
+            .createSignedUrl(a.storagePath, 600) // 10分有効
+          return {
+            url: data?.signedUrl ?? null,
+            mimeType: a.mimeType ?? 'image/jpeg',
+          }
+        }),
+      )
+      imageUrls = signResults.filter(
+        (r): r is { url: string; mimeType: string } => r.url !== null
+      )
+    }
+
+  注意:
+    - Service Role の supabaseAdmin を使うため、Storage ポリシーは不要
+    - 署名 URL の有効期限は 600 秒（streamText の実行時間を十分カバー）
+    - Storage から直接ダウンロード（base64）する方法もあるが、
+      URL 渡しの方がメモリ効率が良い（5MB × 3 枚 = 最大 15MB を避けられる）
+
+Step 2: streamText の messages に画像を追加する
+  ファイル: app/api/chat/route.ts
+  位置: L151 (streamText 呼び出し)
+
+  方法 A（推奨）: convertSafeMessages の結果に ImagePart を追加する
+    messages は ModelMessage[] 形式。最後の user メッセージの content に
+    ImagePart を追加する:
+
+    // 最後の user メッセージに画像パートを追加
+    if (imageUrls.length > 0) {
+      const lastUserIndex = messages.findLastIndex((m) => m.role === 'user')
+      if (lastUserIndex >= 0) {
+        const userMsg = messages[lastUserIndex]
+        // content が string の場合は配列形式に変換
+        const existingContent = typeof userMsg.content === 'string'
+          ? [{ type: 'text' as const, text: userMsg.content }]
+          : Array.isArray(userMsg.content)
+            ? userMsg.content
+            : []
+        const imageParts = imageUrls.map((img) => ({
+          type: 'image' as const,
+          image: new URL(img.url),
+          mediaType: img.mimeType,
+        }))
+        messages[lastUserIndex] = {
+          ...userMsg,
+          content: [...existingContent, ...imageParts],
+        }
+      }
+    }
+
+  方法 B（代替）: convertSafeMessages を通さず、直接 ModelMessage を構築する。
+    → 既存のメッセージ変換ロジックが複雑なため、方法 A を推奨。
+
+Step 3: テストを追加・修正する
+  ファイル: tests/api/chat-conversations.integration.test.ts
+
+  追加テストケース:
+  - 画像付きメッセージで streamText が呼ばれた際、
+    messages の最後の user メッセージに ImagePart が含まれている
+  - 複数画像（3枚）の場合、すべての ImagePart が含まれている
+  - 添付なしの場合、従来通りテキストのみの messages が渡される
+  - Storage の署名 URL 取得が失敗した場合、
+    その画像はスキップされ、テキストのみで AI に送信される（エラーにしない）
+
+  MockQuery の storage モックに createSignedUrl を追加:
+    supabaseAdmin.storage.from('attachments').createSignedUrl(path, expires)
+    → { data: { signedUrl: 'https://mock-signed-url...' } }
+
+Step 4: system プロンプトに画像対応の指示を追加する（オプション）
+  ファイル: app/api/chat/route.ts (L153)
+
+  現在の system プロンプト:
+    'あなたは親切で分かりやすい塾の先生です。中高生の学習をサポートしてください。...'
+
+  追加案:
+    '画像が添付されている場合は、画像の内容を確認して回答に反映してください。
+     教科書の写真や問題用紙の場合は、写っている問題を読み取って解説してください。'
+
+  → これは必須ではないが、AI の応答品質が向上する可能性がある。
+
+Risks / Follow-ups
+- Storage 署名 URL の有効期限: streamText 実行中に期限切れになる可能性は極めて低い
+  （600秒の署名 URL に対し、ストリーミング開始は数秒以内）。
+  ただし、極端に長い会話履歴の場合は初回リクエストが遅延する可能性あり。
+- OpenAI API コスト: gpt-4o-mini の Vision 入力はテキストのみより
+  トークン消費が増加する（画像1枚あたり約 85〜1105 トークン、解像度依存）。
+  β版 20 名規模では問題ないが、スケール時にはコスト監視が必要。
+- Storage ポリシー依存: GFX-31 では supabaseAdmin（Service Role）で
+  署名 URL を生成するため Storage ポリシーは不要。
+  ただし、GFX-32（クライアント側の表示用署名 URL）には Storage ポリシーが必要。
+- 「(構造化データを受信中...)」表示: GFX-31 の修正後にも再現する場合は
+  MessageBubble.tsx のフォールバック表示ロジックを別途調査する。
+
+前提条件
+- GFX-32（Supabase Storage バケット・ポリシー設定）が完了していること。
+  バケットが存在しないと署名 URL の生成が失敗する。
+  ただし、コード変更自体は GFX-32 の前に実施可能（テストはモックで動く）。
+
+Acceptance Criteria (Done)
+- [ ] 画像を添付してチャット送信した際、AI が画像の内容を踏まえた回答を返す
+- [ ] 複数画像（最大3枚）を添付した場合、すべての画像を AI が認識する
+- [ ] 添付なしの従来のテキストチャットに影響がない
+- [ ] Storage の署名 URL 取得が失敗した場合でもチャットが動作する（画像なしで送信）
+- [ ] テストが追加されている（画像付き、画像なし、署名失敗の各ケース）
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
+## GFX-32: Supabase Storage バケット・ポリシー設定ゲート（人間作業）
+
+```text
+[Task Title]
+Supabase Storage の attachments バケット作成とアクセスポリシー設定（手動作業）
+
+Goal
+- 画像添付機能の動作に必要な Supabase Storage の設定を完了する。
+- バケットが存在しないと、署名 URL の生成・画像アップロード・画像表示が
+  すべて失敗する。
+- この設定は Supabase Dashboard での手動作業であり、コード変更は不要。
+
+Background — なぜ必要か
+- 画像添付機能（BE-08〜11, FE-05〜06）の実装時に
+  「Storage ポリシーは Supabase コンソールで手動設定が必要」と文書化されていた
+  （CLAUDE.md §添付画像機能 > Storage 参照）。
+- UAT テスト（TC_C_001）で画像添付をテストした際、
+  Supabase Storage 側の設定が未実施であることが判明。
+- バケット未作成の状態では:
+  - POST /api/attachments/sign → 署名 URL 生成が 500 エラー
+  - クライアントの PUT アップロード → 失敗
+  - MessageBubble の署名 URL 取得 → 失敗 → 「読み込めません」表示
+
+Context — 必要な設定項目
+
+■ 1. attachments バケットの作成
+  場所: Supabase Dashboard > Storage > New bucket
+  設定:
+    - Name: attachments
+    - Public: OFF（非公開）
+    - File size limit: 5MB（= MAX_FILE_SIZE_BYTES）
+    - Allowed MIME types: image/jpeg, image/png, image/webp
+
+■ 2. Storage ポリシー — SELECT（読み取り）
+  場所: Supabase Dashboard > Storage > Policies > attachments バケット
+  目的: ユーザーが自分の添付画像を表示するための署名 URL 生成を許可
+  ポリシー:
+    - Name: Users can read own attachments
+    - Allowed operation: SELECT
+    - Target roles: authenticated
+    - Policy definition:
+        auth.uid()::text = (storage.foldername(name))[1]
+      （Storage パスが {user_id}/{uuid}.{ext} の規約に基づく）
+
+■ 3. Storage ポリシー — INSERT（書き込み）
+  場所: Supabase Dashboard > Storage > Policies > attachments バケット
+  目的: ユーザーが自分のフォルダに画像をアップロードすることを許可
+  ポリシー:
+    - Name: Users can upload own attachments
+    - Allowed operation: INSERT
+    - Target roles: authenticated
+    - Policy definition:
+        auth.uid()::text = (storage.foldername(name))[1]
+
+■ 4. Storage ポリシー — SELECT（スタッフ用、オプション）
+  目的: スタッフが全ユーザーの添付画像を閲覧するための署名 URL 生成を許可
+  ポリシー:
+    - Name: Staff can read all attachments
+    - Allowed operation: SELECT
+    - Target roles: authenticated
+    - Policy definition:
+        (auth.jwt() -> 'app_metadata' ->> 'role') = 'staff'
+
+注意事項
+- POST /api/attachments/sign は supabaseAdmin（Service Role）を使用するため、
+  署名アップロード URL の生成自体は Storage ポリシーに依存しない。
+- ただし、クライアントが署名 URL で PUT アップロードする際には
+  INSERT ポリシーが必要。
+- MessageBubble が表示用の署名 URL を取得する際には
+  getSupabaseBrowserClient()（anon key + user token）を使用するため、
+  SELECT ポリシーが必要。
+- バケットの File size limit と Allowed MIME types は
+  サーバーサイドバリデーション（attachmentValidation.ts）と二重防御になる。
+
+検証手順
+1. バケット作成後: Supabase Dashboard > Storage で「attachments」バケットが表示される
+2. ポリシー設定後: Supabase Dashboard > Storage > Policies で 2〜3 件のポリシーが表示される
+3. 動作確認:
+   - localhost で画像を添付してチャット送信 → アップロードが成功する
+   - 送信後のメッセージバブルに画像サムネイルが表示される
+   - サムネイルをクリックすると拡大表示（ImageLightbox）が開く
+
+Acceptance Criteria (Done)
+- [ ] Supabase Dashboard > Storage に「attachments」バケットが存在する
+- [ ] バケット設定: Public = OFF, File size limit = 5MB
+- [ ] SELECT ポリシー（本人の画像読み取り）が設定されている
+- [ ] INSERT ポリシー（本人フォルダへの書き込み）が設定されている
+- [ ] localhost で画像添付→チャット送信が成功する
+- [ ] 送信後のメッセージに画像サムネイルが表示される
+```
+
+---
+
 ## 4. 実装ロードマップサマリー
 
 ```
@@ -2137,6 +2420,15 @@ Critical: GFX-29
 Hotfix: GFX-27, GFX-28
   → GFX-27: ログインリダイレクト先修正（1 行変更）
   → GFX-28: UsageBadge リアルタイム更新（UAT TC_B_010 対応）
+
+Critical: GFX-31
+  → 添付画像を AI（gpt-4o-mini Vision）に渡す Image-to-LLM パイプライン実装
+  → 画像添付機能の中核。GFX-32（Storage 設定）が前提条件
+  → TC_C_001（画像添付 UAT）の必須修正
+
+Gate H（GFX-31 の前に実施）: GFX-32
+  → Supabase Storage の attachments バケット作成 + ポリシー設定（人間作業）
+  → バケット未作成だと署名 URL 生成・アップロード・表示がすべて失敗する
 
 Sprint 5: GFX-30
   → HEIC/HEIF 画像のクライアント変換対応（iPhone ユーザー UX）
