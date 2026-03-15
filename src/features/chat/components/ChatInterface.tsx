@@ -442,6 +442,29 @@ function ChatLoader({
   const [attachmentsMap, setAttachmentsMap] = useState<Record<string, MessageAttachment[]>>({})
   const [loading, setLoading] = useState(false)
 
+  // ChatSession の key 管理:
+  // null → ID（新規チャットが会話に確定）の場合は再マウントしない
+  // ID → null / ID → 別ID の場合は再マウントする
+  const prevConversationIdRef = useRef(conversationId)
+  const [sessionKey, setSessionKey] = useState(conversationId || 'new')
+
+  useEffect(() => {
+    const prev = prevConversationIdRef.current
+    const curr = conversationId
+
+    if (!prev && curr) {
+      // null → ID: 新規チャットが会話に確定（再マウント不要）
+      prevConversationIdRef.current = curr
+      return
+    }
+
+    if (prev !== curr) {
+      // ID → null: 新規チャットへ切替 / ID → 別ID: 会話切替（再マウント必要）
+      setSessionKey(curr || `new-${Date.now()}`)
+      prevConversationIdRef.current = curr
+    }
+  }, [conversationId])
+
   useEffect(() => {
     if (!conversationId) {
       setMessages([])
@@ -494,7 +517,7 @@ function ChatLoader({
 
   return (
     <ChatSession
-      key={conversationId || 'new'}
+      key={sessionKey}
       token={token}
       initialMessages={messages}
       conversationId={conversationId}

@@ -11,12 +11,14 @@ interface ConversationSidebarProps {
   token: string
   selectedId?: string
   onSelect: (id: string) => void
+  onNewChat?: () => void
 }
 
 export function ConversationSidebar({
   token,
   selectedId,
   onSelect,
+  onNewChat,
 }: ConversationSidebarProps) {
   const [conversations, setConversations] = useState<Conversation[]>([])
   const [loading, setLoading] = useState(false)
@@ -120,7 +122,7 @@ export function ConversationSidebar({
         <h2 className="text-sm font-bold text-gray-700">会話履歴</h2>
         <button
           type="button"
-          onClick={() => onSelect('')} // 新規作成
+          onClick={() => (onNewChat ? onNewChat() : onSelect(''))} // 新規作成
           className="text-xs text-blue-600 hover:underline"
         >
           新規チャット
