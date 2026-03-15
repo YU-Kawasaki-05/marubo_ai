@@ -163,6 +163,19 @@
 | **GFX-17** | done | GAP-22 | チャット入力 textarea 化 | `ChatInterface.tsx` の `<input>` を `<textarea>` に変更。`rows=1` + JS auto-resize + `max-height` スクロール。Shift+Enter で改行、Enter で送信。 |
 | **GFX-18** | done | GAP-21 | 管理画面の添付画像表示 | `ConversationDetail` に `AttachmentThumbnails` を統合。`/api/admin/attachments/signed-url` エンドポイントを追加（Service Role で署名）。 |
 
+#### UAT 発見 Hotfix / Critical
+
+| ID | Status | 対応 GAP | 概要 | 詳細 |
+|----|--------|---------|------|------|
+| **GFX-27** | done | GAP-10 (残作業) | スタッフリダイレクト先修正 | `app/login/page.tsx` で `router.push('/admin')` に修正（`/admin/allowlist` → `/admin`）。1 行変更。 |
+| **GFX-28** | done | (新規) | UsageBadge リアルタイム更新 | `onMessageComplete` コールバックで `usageRefreshKey` をインクリメントし、AI 応答完了後に使用量表示を再取得。 |
+| **GFX-29** | done | (新規) | 会話継続・メッセージ永続化・時系列修正 | `sendMessage` の `body.conversationId` で既存会話に追記。`messages` テーブルに `seq BIGSERIAL` 列追加で時系列保証。オーナーチェック付き。 |
+| **GFX-30** | done | (新規) | HEIC/HEIF 画像のクライアント変換 | `heic2any` で iPhone の HEIC/HEIF 画像をクライアント側で JPEG に自動変換。`CONVERTIBLE_MIME_TYPES` / `INPUT_ACCEPT_TYPES` 定数追加。変換中インジケータ表示。 |
+| **GFX-31** | done | (新規) | Image-to-LLM パイプライン | `chat/route.ts` で添付画像の署名 URL を取得し、`streamText` の messages に `ImagePart` として追加。gpt-4o-mini Vision で画像認識回答。 |
+| **GFX-32** | done | (新規) | Supabase Storage 設定 | `attachments` バケット作成 + SELECT/INSERT ポリシー設定のマイグレーション SQL。スタッフ全件読み取りポリシー含む。 |
+| **GFX-33** | done | (新規) | 画像のみ送信対応 | テキストなし + 画像のみ送信時の messages/attachments DB 保存修正。送信直後のサムネイル即時表示（`localAttachments`）。「構造化データを受信中...」フォールバック改善。 |
+| **GFX-34** | todo | (新規) | 会話 ID の URL 管理 | `?c=xxx` searchParams で会話 ID を URL に反映。リロード耐性・新規チャットボタン・自動リロード解消。詳細: `docs/AI-Generated01/04_fix_gap_commands.md` |
+
 ---
 
 必要な情報や優先度が変わった場合は、このファイルで随時アップデートしてください。

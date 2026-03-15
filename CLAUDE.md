@@ -34,18 +34,21 @@
 - マイグレーション: `supabase/migrations/20260226000000_be08_attachments.sql`（Gate A-1 で適用済み）
 
 ### Storage
-- バケット: `attachments`（非公開、`public: false`）
+- バケット: `attachments`（非公開、`public: false`）— GFX-32 マイグレーションで作成済み
 - パス規約: `{user_id}/{uuid}.{ext}`
-- **重要**: Storage ポリシー（SELECT/INSERT）は Supabase コンソールで手動設定が必要
-  - もし画像が表示されない場合、Supabase Dashboard > Storage > Policies を確認
-  - 必要なポリシー: 本人の読み取り（`auth.uid()::text = (storage.foldername(name))[1]`）
+- Storage ポリシー（SELECT/INSERT）は `supabase/migrations/20260315000000_storage_attachments_bucket.sql` で設定済み
+  - 本人の読み取り: `auth.uid()::text = (storage.foldername(name))[1]`
+  - 本人の書き込み: 同上
+  - スタッフ全件読み取り: `(auth.jwt() -> 'app_metadata' ->> 'role') = 'staff'`
 
 ### アップロードフロー
 1. クライアント: ファイル選択 → バリデーション（MIME: JPEG/PNG/WebP, サイズ: 5MB以下, 枚数: 3枚以下）
+   - HEIC/HEIF は `heic2any` でクライアント側 JPEG 変換（GFX-30）
 2. `POST /api/attachments/sign` → 署名 URL + storagePath 取得
 3. クライアント: 署名 URL に `PUT` でアップロード
 4. `POST /api/chat` の `body.attachments[]` に `{ storagePath, mimeType, size }` を含めて送信
-5. サーバー: `onFinish` で `attachments` テーブルに INSERT
+5. サーバー: Storage から署名 URL を取得し、`ImagePart` として OpenAI に渡す（GFX-31: AI 画像認識）
+6. サーバー: `onFinish` で `attachments` テーブルに INSERT（テキストなし画像のみ送信にも対応: GFX-33）
 
 ### 表示フロー
 1. `GET /api/conversations/[id]` が各メッセージに `attachments[]` を返す
@@ -68,7 +71,7 @@
 - `tests/api/attachments-sign.test.ts`: 認証/バリデーション/正常系/Storageエラー
 - `tests/api/attachments-flow.integration.test.ts`: sign→chat→detail の一連フロー統合テスト（5ケース）
 - `tests/api/admin/grant.test.ts`: grant/revoke + 認可/バリデーション/監査ログ（11ケース）
-- テスト実行: `pnpm test`（54テスト, 10ファイル）
+- テスト実行: `pnpm test`（214テスト, 24ファイル）
 
 ## 画像添付機能 — 実装済みファイル一覧（トラブルシュート用）
 
@@ -116,15 +119,27 @@
 | PR-09B | QA-08 | 画像添付フロー統合テスト（sign→chat→detail、5ケース） |
 | PR-09 | CHAT-06 | 画像添付機能の完了整合チェック（ドキュメント更新のみ） |
 | PR-10 | BE-13 | `/api/admin/grant` POST/GET + audit_grant テーブル + テスト11件 |
+| — | GFX-27 | スタッフログイン後のリダイレクト先を `/admin` に修正（GAP-10 残作業） |
+| — | GFX-28 | UsageBadge リアルタイム更新（`onMessageComplete` コールバック） |
+| — | GFX-29 | 会話継続・メッセージ永続化・時系列修正（`conversationId` 送信 + `seq` 列追加） |
+| — | — | ルートページ（`/`）を `/chat` にリダイレクト |
+| — | GFX-30 | HEIC/HEIF 画像のクライアント側 JPEG 自動変換（`heic2any`） |
+| — | GFX-31 | 添付画像を gpt-4o-mini Vision に渡す Image-to-LLM パイプライン |
+| — | GFX-32 | Supabase Storage `attachments` バケット作成 + ポリシー設定（マイグレーション） |
+| — | GFX-33 | 画像のみ送信時のメッセージ保存・サムネイル即時表示・フォールバック改善 |
 
-## 次の作業候補（`memo/prompt/014_Prompts_forAgent.md` 参照）
-- PR-11以降: 会話検索、月次レポートなど
+## 次の作業候補
+- **GFX-34**: 会話 ID の URL 管理と画面遷移の安定化（リロード耐性・新規チャット・自動リロード解消）
+  - 詳細: `docs/AI-Generated01/04_fix_gap_commands.md` の GFX-34 セクション参照
 
 ## 設計判断メモ（将来の参照用）
 - **ルートページ（`/`）**: β版では `/chat` にリダイレクト（LP 不要）。一般公開時にランディングページが必要になったらリダイレクトを外して `app/page.tsx` に LP コンポーネントを置けばよい。
 
 ## 既知の問題・注意点
 - `docs/situation/001_20260215.md` が unstaged deleted として常に表示される（スコープ外、無視してよい）
-- Storage ポリシー未設定だと画像表示が失敗する（Supabase コンソールで要確認）
 - 署名 URL は有効期限あり（表示用10分、アップロード用60秒）。長時間放置で期限切れ
 - `pnpm build` は Supabase 環境変数が必要（CI/ローカルでは NEXT_PUBLIC_SUPABASE_URL 等が必要）
+- **会話 ID が URL に反映されていない**（GFX-34 で対応予定）:
+  - リロードすると新規チャットになる
+  - 新規チャットで最初のメッセージ送信後に画面がリロードされたように見える
+  - 「新規チャット」ボタンが状態リセットされない場合がある

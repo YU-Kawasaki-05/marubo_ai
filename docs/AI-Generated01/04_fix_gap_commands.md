@@ -98,6 +98,7 @@
 | GFX-31 | (新規) | 添付画像を AI（Vision）に渡すパイプライン実装 | Critical |
 | GFX-32 | (新規) | Supabase Storage バケット・ポリシー設定（人間作業） | Gate H |
 | GFX-33 | (新規) | 画像添付メッセージの保存・表示修正（テキストなし送信対応） | Critical |
+| GFX-34 | (新規) | 会話 ID の URL 管理と画面遷移の安定化 | Critical |
 
 ---
 
@@ -2709,6 +2710,339 @@ Acceptance Criteria (Done)
 
 ---
 
+## GFX-34: 会話 ID の URL 管理と画面遷移の安定化
+
+```text
+[Task Title]
+会話 ID を URL searchParams で管理し、リロード耐性・新規チャット・
+画面遷移の安定化を実現する
+
+Goal
+- 会話 ID を URL の search parameter（?c=xxx）に反映し、
+  リロードしても同じ会話が表示されるようにする。
+- 新規チャットで最初のメッセージ送信後の「自動リロード」を解消する。
+- 「新規チャット」ボタンが確実に機能するようにする。
+
+Background — なぜ必要か
+- UAT テスト中に以下の 3 症状が発生:
+
+  1. LLM 生成完了後に画面が自動リロードされたように見える
+     新規チャットで最初のメッセージを送信すると、AI 応答完了後に
+     画面が一瞬リセットされて再描画される。
+     システムが落ちたように感じ、UX が悪い。
+
+  2. 「新規チャット」ボタンが機能しない
+     サイドバーの「新規チャット」をクリックしても、
+     現在のチャット画面がリセットされない。
+
+  3. リロードすると新規チャットになってしまう
+     会話中にブラウザをリロードすると、
+     会話が失われて新規チャット画面に戻る。
+
+- これら 3 症状は「会話 ID が URL に反映されていない」という
+  同一の根本原因に起因する。
+
+Context — 現在の実装と問題点
+
+■ 現在のアーキテクチャ:
+  ファイル: app/chat/page.tsx
+
+  L17: const [selectedId, setSelectedId] = useState<string>('')
+  → 会話 ID は React state のみで管理。URL は常に /chat のまま。
+
+  L67-70: handleConversationCreated
+    const handleConversationCreated = (id: string) => {
+      setSelectedId(id)
+      setSidebarKey(prev => prev + 1)
+    }
+  → 新規会話作成時に selectedId を更新するが、URL は変わらない。
+
+■ 問題 1 の発生メカニズム（自動リロード）:
+
+  ChatInterface.tsx L242-252:
+    新規チャット（conversationId = null）で sendMessage 完了後、
+    onConversationCreated(firstConv.id) が呼ばれる。
+
+  page.tsx L67-70:
+    setSelectedId(id) → conversationId が null → 'abc-123' に変化。
+
+  ChatInterface.tsx L469:
+    <ChatSession key={conversationId || 'new'} ... />
+    key が 'new' → 'abc-123' に変わるため、ChatSession がアンマウント→再マウント。
+    → useChat の全メッセージが消失し、ChatLoader が API から再取得。
+    → ユーザーには画面が一瞬リセットされたように見える。
+
+■ 問題 2 の発生メカニズム（新規チャットボタン不機能）:
+
+  ConversationSidebar.tsx L123:
+    onClick={() => onSelect('')}
+    → setSelectedId('') を呼ぶ。
+
+  すでに selectedId = '' の場合（新規チャット状態）:
+    → setSelectedId('') は値が変わらず、React の再レンダリングが発生しない。
+    → 既にメッセージが表示されている新規チャットのリセットができない。
+
+  selectedId がある場合（既存会話を閲覧中）:
+    → setSelectedId('') で selectedId が変わり、ChatSession が再マウントされる。
+    → この場合は正常に動作するが、URL は /chat のまま。
+
+■ 問題 3 の発生メカニズム（リロードで新規チャット）:
+
+  page.tsx L17:
+    const [selectedId, setSelectedId] = useState<string>('')
+    → ページリロードで常に '' に初期化される。
+    → URL に会話 ID が含まれていないため復元できない。
+
+Scope
+- 変更OK:
+  - app/chat/page.tsx（URL searchParams による会話 ID 管理）
+  - src/features/chat/components/ChatInterface.tsx（onConversationCreated の
+    コールバックで URL を更新する方式に変更。ChatSession の key 管理見直し）
+  - src/features/chat/components/ConversationSidebar.tsx
+    （「新規チャット」ボタンのリセット確実化）
+- 変更NG:
+  - app/api/**（サーバー API は変更不要）
+  - DB スキーマ（変更不要）
+  - middleware.ts（/chat のマッチャーは既存のまま）
+
+Implementation — Step-by-Step
+
+Step 1: URL searchParams で会話 ID を管理する
+  ファイル: app/chat/page.tsx
+
+  方法: Next.js の useSearchParams + useRouter を使い、
+  selectedId を URL の ?c=xxx パラメータから読み書きする。
+
+  1a. selectedId の初期値を URL から読む:
+    import { useSearchParams } from 'next/navigation'
+
+    const searchParams = useSearchParams()
+    const conversationIdFromUrl = searchParams.get('c') ?? ''
+    const [selectedId, setSelectedId] = useState<string>(conversationIdFromUrl)
+
+    // URL パラメータの変化を監視（ブラウザの戻る/進むボタン対応）
+    useEffect(() => {
+      const idFromUrl = searchParams.get('c') ?? ''
+      if (idFromUrl !== selectedId) {
+        setSelectedId(idFromUrl)
+      }
+    }, [searchParams])  // selectedId は依存配列に入れない（ループ防止）
+
+  1b. selectedId 変更時に URL を更新する:
+    → setSelectedId を直接呼ぶ代わりに、URL を更新するラッパー関数を作る。
+
+    const navigateToConversation = useCallback((id: string) => {
+      setSelectedId(id)
+      if (id) {
+        router.replace(`/chat?c=${id}`, { scroll: false })
+      } else {
+        router.replace('/chat', { scroll: false })
+      }
+    }, [router])
+
+    注意:
+      - router.replace を使用（router.push ではない）。
+        push だとブラウザ履歴が積み上がり、戻るボタンで会話を遡ることになる。
+        replace なら現在の履歴エントリを置き換える。
+      - { scroll: false } でページ位置を維持する。
+
+  1c. handleConversationCreated を URL 更新方式に変更:
+    変更前:
+      const handleConversationCreated = (id: string) => {
+        setSelectedId(id)
+        setSidebarKey(prev => prev + 1)
+      }
+    変更後:
+      const handleConversationCreated = (id: string) => {
+        navigateToConversation(id)
+        setSidebarKey(prev => prev + 1)
+      }
+
+  1d. handleSelect を URL 更新方式に変更:
+    変更前:
+      const handleSelect = (id: string) => {
+        setSelectedId(id)
+        setIsSidebarOpen(false)
+      }
+    変更後:
+      const handleSelect = (id: string) => {
+        navigateToConversation(id)
+        setIsSidebarOpen(false)
+      }
+
+Step 2: 新規会話作成時の ChatSession 再マウントを回避する
+  ファイル: src/features/chat/components/ChatInterface.tsx
+
+  現在の問題:
+    <ChatSession key={conversationId || 'new'} ... />
+    → conversationId が null → ID に変わると key が変わり再マウントされる。
+
+  方法 A（推奨）: ChatSession 内で conversationId の変化を吸収する
+    → ChatSession に conversationId を ref で管理し、
+      新規会話作成時は conversationId を内部で更新するが key は変えない。
+
+    具体的には:
+    - ChatSession に internalConversationId state を追加
+    - 外部から conversationId が変わった場合:
+      - null/'' → 実ID: internalConversationId を更新するだけ（再マウントしない）
+      - 実ID → 別の実ID: これは会話切替なので再マウントが必要
+      - 実ID → null/'': 新規チャットへの切替なので再マウントが必要
+    → key を使い分ける:
+      <ChatSession
+        key={conversationId || sessionKeyRef.current}
+        ...
+      />
+      sessionKeyRef は新規チャットのセッション内で固定し、
+      conversationId が設定されても key を変えない。
+
+  方法 B（シンプル）: onConversationCreated で URL だけ更新し、
+    ChatSession を再マウントしない。
+    → ChatSession の conversationId prop が変わっても key は
+      初回レンダリング時の値を維持する。
+
+    // ChatLoader 内
+    const initialConversationIdRef = useRef(conversationId)
+    const sessionKey = initialConversationIdRef.current || 'new'
+    // conversationId が変わっても sessionKey は変わらない
+
+    // ただし、サイドバーから別の会話を選択した場合は再マウントが必要
+    // → conversationId が「別の実 ID」に変わった場合のみ key を更新
+
+    実装:
+    const prevConversationIdRef = useRef(conversationId)
+    const [sessionKey, setSessionKey] = useState(conversationId || 'new')
+
+    useEffect(() => {
+      const prev = prevConversationIdRef.current
+      const curr = conversationId
+
+      // null → ID: 新規チャットが会話に確定（再マウント不要）
+      if (!prev && curr) {
+        // key は変えない（再マウントしない）
+        prevConversationIdRef.current = curr
+        return
+      }
+
+      // ID → null: 新規チャットへ切替（再マウント必要）
+      // ID → 別ID: 会話切替（再マウント必要）
+      if (prev !== curr) {
+        setSessionKey(curr || `new-${Date.now()}`)
+        prevConversationIdRef.current = curr
+      }
+    }, [conversationId])
+
+    <ChatSession key={sessionKey} conversationId={conversationId} ... />
+
+Step 3: 「新規チャット」ボタンの確実なリセット
+  ファイル: app/chat/page.tsx
+
+  問題: selectedId が既に '' の場合、setSelectedId('') は値が変わらず
+  再レンダリングが起きない。
+
+  修正: navigateToConversation に強制リセットフラグを追加するか、
+  新規チャット専用のハンドラを作る。
+
+    const handleNewChat = useCallback(() => {
+      // URL を /chat に更新（パラメータなし）
+      router.replace('/chat', { scroll: false })
+      // selectedId をリセット（既に '' でも強制的に再レンダリングするため、
+      // ChatSession の key にタイムスタンプを含める）
+      setSelectedId('')
+      setSidebarKey(prev => prev + 1)  // サイドバーも更新
+      setIsSidebarOpen(false)
+    }, [router])
+
+  ConversationSidebar にも新規チャット用のコールバックを渡す:
+    <ConversationSidebar
+      ...
+      onNewChat={handleNewChat}  // 追加
+    />
+
+  ConversationSidebar.tsx:
+    props に onNewChat を追加:
+      interface ConversationSidebarProps {
+        ...
+        onNewChat?: () => void
+      }
+
+    「新規チャット」ボタンを修正:
+      変更前: onClick={() => onSelect('')}
+      変更後: onClick={() => onNewChat?.() ?? onSelect('')}
+
+  ChatLoader 側の対応:
+    sidebarKey の変化を検知して ChatSession を再マウントする必要がある。
+    方法: ChatInterface に resetKey prop を追加するか、
+    page.tsx で conversationId に一意の値を含める:
+
+    // selectedId が '' でも、sidebarKey が変わるたびに ChatSession を
+    // 再マウントするため、key に sidebarKey を含める:
+    <ChatInterface
+      token={token}
+      conversationId={selectedId || null}
+      key={selectedId || `new-${sidebarKey}`}  // ← sidebarKey で強制リセット
+      ...
+    />
+
+    注意: この方法は ChatInterface 全体の再マウントになるため、
+    認証状態の再チェック等が走る。パフォーマンス上の問題がないか確認する。
+
+Step 4: Suspense boundary の追加（useSearchParams 対応）
+  ファイル: app/chat/page.tsx
+
+  Next.js App Router で useSearchParams を使う場合、
+  最寄りの Suspense boundary が必要（ビルドエラー防止）。
+
+  export default function ChatPage() の中身を内部コンポーネントに移動し、
+  外側で Suspense で囲む:
+
+    import { Suspense } from 'react'
+
+    function ChatPageContent() {
+      // 現在の ChatPage の中身をここに移動
+      const searchParams = useSearchParams()
+      ...
+    }
+
+    export default function ChatPage() {
+      return (
+        <Suspense fallback={<div className="flex h-[100dvh] items-center justify-center">読み込み中...</div>}>
+          <ChatPageContent />
+        </Suspense>
+      )
+    }
+
+Risks / Follow-ups
+- ブラウザ履歴: router.replace を使用するため、
+  会話切替のたびにブラウザ履歴が上書きされる。
+  「戻る」ボタンで前の会話に戻れない（意図的な設計）。
+  将来的に router.push に変更すれば会話間のブラウザバック対応も可能。
+- searchParams 変更のタイミング:
+  Next.js の useSearchParams は非同期更新のため、
+  router.replace 直後に searchParams.get('c') が最新値を返さない可能性がある。
+  → selectedId は useState で管理し、URL は同期的に更新するため問題ない。
+    useSearchParams は初期値の読み取りとブラウザバック対応にのみ使用。
+- ChatSession の key 管理:
+  Step 2 の方法 B は、新規チャットが会話に確定する際の再マウントを回避するが、
+  ChatSession 内の useChat が古い API URL を使い続ける可能性がある。
+  useChat のデフォルト API URL は /api/chat で固定のため問題ないが、
+  将来的に API URL を動的に変える場合は注意が必要。
+- Middleware への影響:
+  middleware.ts のマッチャーは /chat/:path* のため、/chat?c=xxx は対象内。
+  search params はマッチャーに影響しないため変更不要。
+
+Acceptance Criteria (Done)
+- [ ] 会話中にブラウザをリロードしても、同じ会話が表示される
+- [ ] URL に ?c=xxx パラメータが含まれ、会話 ID が反映されている
+- [ ] 新規チャットで最初のメッセージ送信後、画面の「リロード」が発生しない
+- [ ] サイドバーの「新規チャット」ボタンをクリックすると、新規チャット画面になる
+- [ ] 既存の会話をサイドバーから選択すると、その会話が表示され URL が更新される
+- [ ] ブラウザの戻る/進むボタンで会話が切り替わる（オプション: replace 使用時は不要）
+- [ ] テキストのみ・画像添付・画像のみ送信すべてで会話の継続が正常に動作する
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
 ## 4. 実装ロードマップサマリー
 
 ```
@@ -2734,11 +3068,13 @@ Hotfix: GFX-27, GFX-28
   → GFX-27: ログインリダイレクト先修正（1 行変更）
   → GFX-28: UsageBadge リアルタイム更新（UAT TC_B_010 対応）
 
-Critical: GFX-31, GFX-33（直列: GFX-31 → GFX-33）
+Critical: GFX-31, GFX-33, GFX-34
   → GFX-31: 添付画像を AI（gpt-4o-mini Vision）に渡す Image-to-LLM パイプライン実装
   → GFX-33: 画像添付メッセージの保存・表示修正（テキストなし送信対応 + リアルタイムサムネイル）
-  → GFX-31 と GFX-33 は chat/route.ts を共に変更するため直列実行
-  → GFX-32（Storage 設定）が前提条件
+  → GFX-34: 会話 ID の URL 管理と画面遷移の安定化（リロード耐性・新規チャット・自動リロード解消）
+  → GFX-31 → GFX-33 は chat/route.ts を共に変更するため直列実行
+  → GFX-34 は page.tsx + ChatInterface.tsx 中心のため GFX-33 と並列可能
+  → GFX-32（Storage 設定）が GFX-31 の前提条件
 
 Gate H（GFX-31 の前に実施）: GFX-32
   → Supabase Storage の attachments バケット作成 + ポリシー設定（人間作業）
