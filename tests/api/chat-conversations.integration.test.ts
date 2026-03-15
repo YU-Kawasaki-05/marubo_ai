@@ -645,4 +645,96 @@ describe('chat conversations integration', () => {
     // attachments は DB に保存されること（AI に渡せなくても保存は行う）
     expect(mockState.attachments).toHaveLength(1)
   })
+
+  it('saves user message and attachments when text is empty (image-only send)', async () => {
+    const chatRes = await chatPost(
+      new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer student-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [{ id: 'm1', role: 'user', content: '', parts: [{ type: 'text', text: '' }] }],
+          attachments: [
+            { storagePath: 'mock-student-auth/photo.jpg', mimeType: 'image/jpeg', size: 20000 },
+          ],
+        }),
+      }),
+    )
+
+    expect(chatRes.status).toBe(200)
+    const conversationId = chatRes.headers.get('x-conversation-id')
+    expect(conversationId).toBeTruthy()
+
+    // ユーザーメッセージが content: '' で保存されること
+    const userMsg = mockState.messages.find((m) => m.role === 'user')
+    expect(userMsg).toBeTruthy()
+    expect(userMsg!.content).toBe('')
+    expect(userMsg!.conversation_id).toBe(conversationId)
+
+    // assistant メッセージも保存されること
+    const assistantMsg = mockState.messages.find((m) => m.role === 'assistant')
+    expect(assistantMsg).toBeTruthy()
+
+    // attachments が保存されること
+    expect(mockState.attachments).toHaveLength(1)
+    expect(mockState.attachments[0]).toMatchObject({
+      user_id: 'mock-student-auth',
+      storage_path: 'mock-student-auth/photo.jpg',
+      mime_type: 'image/jpeg',
+      size_bytes: 20000,
+    })
+    expect(mockState.attachments[0].message_id).toBe(userMsg!.id)
+  })
+
+  it('loads image-only message with attachments from conversation detail API', async () => {
+    // テキストなし + 画像で送信
+    const chatRes = await chatPost(
+      new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer student-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [{ id: 'm1', role: 'user', content: '', parts: [{ type: 'text', text: '' }] }],
+          attachments: [
+            { storagePath: 'mock-student-auth/q.png', mimeType: 'image/png', size: 15000 },
+          ],
+        }),
+      }),
+    )
+
+    expect(chatRes.status).toBe(200)
+    const conversationId = chatRes.headers.get('x-conversation-id')
+
+    // 会話詳細 API でユーザーメッセージと添付が返ること
+    const detailRes = await conversationDetailGet(
+      new Request(`http://localhost/api/conversations/${conversationId}`, {
+        method: 'GET',
+        headers: { Authorization: 'Bearer student-token' },
+      }),
+      { params: { id: conversationId! } },
+    )
+    const detailBody = await parseJson(detailRes)
+    expect(detailRes.status).toBe(200)
+
+    type MsgWithAttachments = {
+      role: string
+      content: string
+      attachments: Array<{ storagePath: string; mimeType: string }>
+    }
+    const msgs = (detailBody.data as { messages: MsgWithAttachments[] }).messages
+
+    // ユーザーメッセージ（content: ''）が存在すること
+    const userMsg = msgs.find((m) => m.role === 'user')
+    expect(userMsg).toBeTruthy()
+    expect(userMsg!.content).toBe('')
+    expect(userMsg!.attachments).toHaveLength(1)
+    expect(userMsg!.attachments[0]).toMatchObject({
+      storagePath: 'mock-student-auth/q.png',
+      mimeType: 'image/png',
+    })
+  })
 })

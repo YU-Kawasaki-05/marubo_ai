@@ -192,18 +192,24 @@ export function MessageBubble({ message, attachments }: MessageBubbleProps) {
       >
         {isUser ? (
           // ユーザーのメッセージはそのままプレーンテキストで表示
-          <div className="whitespace-pre-wrap">{textContent}</div>
+          // テキストがない場合（画像のみ送信）は添付サムネイルのみ表示
+          textContent ? (
+            <div className="whitespace-pre-wrap">{textContent}</div>
+          ) : hasAttachments ? (
+            <p className="text-sm text-blue-200 italic">画像を送信しました</p>
+          ) : (
+            <div className="whitespace-pre-wrap">{textContent}</div>
+          )
         ) : (
           // AIのメッセージはMarkdownとしてレンダリング
           <MemoizedMarkdown content={textContent} />
         )}
 
         {/* contentが空で、かつpartsがある場合のフォールバック（Tool calls等） */}
-        {/* テキストがない場合のみ表示 */}
-        {!textContent && message.parts && message.parts.length > 0 && (
+        {/* 添付画像がある場合はフォールバック表示を抑制 */}
+        {!textContent && !hasAttachments && message.parts && message.parts.length > 0 && (
           <div className="text-xs text-gray-500 mt-1 italic">
             (構造化データを受信中...)
-            {/* 必要に応じてここにPartのレンダリングを追加 */}
           </div>
         )}
 
