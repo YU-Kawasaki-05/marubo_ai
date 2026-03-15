@@ -5,6 +5,8 @@ const mockState = vi.hoisted(() => ({
   messages: [] as Array<Record<string, unknown>>,
   attachments: [] as Array<Record<string, unknown>>,
   seq: 0,
+  lastStreamTextArgs: null as Record<string, unknown> | null,
+  storageSignedUrlShouldFail: false,
 }))
 
 type TableName = 'conversations' | 'messages' | 'attachments'
@@ -124,6 +126,19 @@ const mockClient = {
     },
   },
   from: (table: TableName) => new MockQuery(table),
+  storage: {
+    from: () => ({
+      createSignedUrl: async (path: string) => {
+        if (mockState.storageSignedUrlShouldFail) {
+          return { data: null, error: { message: 'Storage error' } }
+        }
+        return {
+          data: { signedUrl: `https://mock-storage.local/signed/${path}` },
+          error: null,
+        }
+      },
+    }),
+  },
 }
 
 vi.mock('@supabase/supabase-js', () => ({
@@ -149,9 +164,10 @@ vi.mock('@ai-sdk/openai', () => ({
 vi.mock('ai', () => ({
   convertToModelMessages: async (messages: unknown[]) => messages,
   generateText: async () => ({ text: 'モックタイトル' }),
-  streamText: async ({ onFinish }: { onFinish?: (event: { text: string }) => Promise<void> }) => {
-    if (onFinish) {
-      await onFinish({ text: 'AI mock answer' })
+  streamText: async (args: { messages?: unknown[]; onFinish?: (event: { text: string }) => Promise<void> }) => {
+    mockState.lastStreamTextArgs = args as Record<string, unknown>
+    if (args.onFinish) {
+      await args.onFinish({ text: 'AI mock answer' })
     }
     return {
       toUIMessageStreamResponse: () =>
@@ -177,6 +193,8 @@ describe('chat conversations integration', () => {
     mockState.messages = []
     mockState.attachments = []
     mockState.seq = 0
+    mockState.lastStreamTextArgs = null
+    mockState.storageSignedUrlShouldFail = false
     process.env.OPENAI_API_KEY = 'test-key'
     process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://mock.local'
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-key'
@@ -499,5 +517,132 @@ describe('chat conversations integration', () => {
     msgs.forEach((m) => {
       expect(m.attachments).toEqual([])
     })
+  })
+
+  it('includes ImagePart in streamText messages when attachments are provided', async () => {
+    const chatRes = await chatPost(
+      new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer student-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [{ id: 'm1', role: 'user', content: 'この問題を解いて', parts: [{ type: 'text', text: 'この問題を解いて' }] }],
+          attachments: [
+            { storagePath: 'mock-student-auth/img1.jpg', mimeType: 'image/jpeg', size: 10000 },
+          ],
+        }),
+      }),
+    )
+
+    expect(chatRes.status).toBe(200)
+
+    // streamText に渡された messages を検証
+    // convertToModelMessages モックは passthrough なので、
+    // messages は UIMessage 形式のまま渡される（content フィールドあり）
+    const args = mockState.lastStreamTextArgs!
+    const msgs = args.messages as Array<{ role: string; content: unknown }>
+    const lastUser = [...msgs].reverse().find((m) => m.role === 'user')
+    expect(lastUser).toBeTruthy()
+    expect(Array.isArray(lastUser!.content)).toBe(true)
+    const contentParts = lastUser!.content as Array<{ type: string }>
+    expect(contentParts.some((p) => p.type === 'text')).toBe(true)
+    expect(contentParts.some((p) => p.type === 'image')).toBe(true)
+
+    const imagePart = contentParts.find((p) => p.type === 'image') as { type: string; image: URL; mimeType: string }
+    expect(imagePart.image).toBeInstanceOf(URL)
+    expect(imagePart.image.href).toContain('mock-student-auth/img1.jpg')
+    expect(imagePart.mimeType).toBe('image/jpeg')
+  })
+
+  it('includes multiple ImageParts for multiple attachments (max 3)', async () => {
+    const chatRes = await chatPost(
+      new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer student-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [{ id: 'm1', role: 'user', content: '3枚の画像を見て', parts: [{ type: 'text', text: '3枚の画像を見て' }] }],
+          attachments: [
+            { storagePath: 'mock-student-auth/a.jpg', mimeType: 'image/jpeg', size: 1000 },
+            { storagePath: 'mock-student-auth/b.png', mimeType: 'image/png', size: 2000 },
+            { storagePath: 'mock-student-auth/c.webp', mimeType: 'image/webp', size: 3000 },
+          ],
+        }),
+      }),
+    )
+
+    expect(chatRes.status).toBe(200)
+
+    const args = mockState.lastStreamTextArgs!
+    const msgs = args.messages as Array<{ role: string; content: unknown }>
+    const lastUser = [...msgs].reverse().find((m) => m.role === 'user')
+    const contentParts = lastUser!.content as Array<{ type: string }>
+    const imageParts = contentParts.filter((p) => p.type === 'image')
+    expect(imageParts).toHaveLength(3)
+  })
+
+  it('sends text-only messages when no attachments are provided (no ImagePart)', async () => {
+    const chatRes = await chatPost(
+      new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer student-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: 'テキストのみ' }] }],
+        }),
+      }),
+    )
+
+    expect(chatRes.status).toBe(200)
+
+    const args = mockState.lastStreamTextArgs!
+    const msgs = args.messages as Array<{ role: string; content: unknown; parts?: unknown[] }>
+    const lastUser = [...msgs].reverse().find((m) => m.role === 'user')
+    // 添付なしの場合、content は元の parts 形式のまま（ImagePart なし）
+    if (Array.isArray(lastUser!.content)) {
+      const contentParts = lastUser!.content as Array<{ type: string }>
+      expect(contentParts.every((p) => p.type !== 'image')).toBe(true)
+    }
+  })
+
+  it('skips failed signed URLs and sends text-only to AI (graceful degradation)', async () => {
+    mockState.storageSignedUrlShouldFail = true
+
+    const chatRes = await chatPost(
+      new Request('http://localhost/api/chat', {
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer student-token',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [{ id: 'm1', role: 'user', parts: [{ type: 'text', text: '画像つき' }] }],
+          attachments: [
+            { storagePath: 'mock-student-auth/fail.jpg', mimeType: 'image/jpeg', size: 5000 },
+          ],
+        }),
+      }),
+    )
+
+    // チャット自体は成功する（画像なしで AI に送信される）
+    expect(chatRes.status).toBe(200)
+
+    const args = mockState.lastStreamTextArgs!
+    const msgs = args.messages as Array<{ role: string; content: unknown; parts?: unknown[] }>
+    const lastUser = [...msgs].reverse().find((m) => m.role === 'user')
+    // ImagePart が含まれないこと（署名 URL 取得失敗のため）
+    if (Array.isArray(lastUser!.content)) {
+      const contentParts = lastUser!.content as Array<{ type: string }>
+      expect(contentParts.every((p) => p.type !== 'image')).toBe(true)
+    }
+
+    // attachments は DB に保存されること（AI に渡せなくても保存は行う）
+    expect(mockState.attachments).toHaveLength(1)
   })
 })

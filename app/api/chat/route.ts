@@ -1,13 +1,14 @@
 /** @file
  * `/api/chat` Route Handler
  * 機能：チャットメッセージを受信し、AIからの応答をストリーミングで返す。
- *   添付画像がある場合は attachments テーブルにも永続化する。
+ *   添付画像がある場合は Storage の署名 URL を生成し、AI に ImagePart として渡す（Vision 入力）。
+ *   添付画像は attachments テーブルにも永続化する。
  *   分間レート制限（10 req/min）と月間クォータ（100 問/月）を適用。
  *   添付枚数（3枚）・メッセージ文字数（2000文字）のサーバーサイドバリデーション。
  *   会話保存後に LLM（gpt-4o-mini）で20文字以内のタイトルを非同期生成。
  * 入力：JSON { messages: UIMessage[], attachments?: { storagePath, mimeType, size }[], conversationId?: string }
  * 出力：Streaming Text Response
- * 依存：Vercel AI SDK, OpenAI, Supabase Auth, rateLimit
+ * 依存：Vercel AI SDK, OpenAI, Supabase Auth/Storage, rateLimit
  * セキュリティ：ログイン済みユーザーのみ実行可能。レート制限で過剰利用を防止。
  */
 
@@ -110,6 +111,59 @@ export async function POST(req: Request) {
     const messages = await convertSafeMessages(uiMessages)
 
     const supabaseAdmin = getSupabaseAdminClient()
+
+    // 添付画像の署名 URL を取得（AI Vision 入力用）
+    let imageUrls: { url: string; mimeType: string }[] = []
+    if (attachmentInputs.length > 0) {
+      const signResults = await Promise.all(
+        attachmentInputs.map(async (a) => {
+          try {
+            const { data } = await supabaseAdmin.storage
+              .from('attachments')
+              .createSignedUrl(a.storagePath, 600) // 10分有効
+            return {
+              url: data?.signedUrl ?? null,
+              mimeType: a.mimeType ?? 'image/jpeg',
+            }
+          } catch {
+            console.error(`Failed to create signed URL for ${a.storagePath}`)
+            return { url: null, mimeType: a.mimeType ?? 'image/jpeg' }
+          }
+        }),
+      )
+      imageUrls = signResults.filter(
+        (r): r is { url: string; mimeType: string } => r.url !== null,
+      )
+    }
+
+    // 最後の user メッセージに ImagePart を追加（gpt-4o-mini Vision 入力）
+    if (imageUrls.length > 0) {
+      let lastUserIndex = -1
+      for (let i = messages.length - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') { lastUserIndex = i; break }
+      }
+      if (lastUserIndex >= 0) {
+        const userMsg = messages[lastUserIndex]
+        const textParts: Array<{ type: 'text'; text: string }> =
+          typeof userMsg.content === 'string'
+            ? [{ type: 'text', text: userMsg.content }]
+            : Array.isArray(userMsg.content)
+              ? userMsg.content
+                  .filter((p): p is { type: 'text'; text: string } => p.type === 'text')
+              : []
+        const imageParts: Array<{ type: 'image'; image: URL; mimeType: string }> =
+          imageUrls.map((img) => ({
+            type: 'image' as const,
+            image: new URL(img.url),
+            mimeType: img.mimeType,
+          }))
+        messages[lastUserIndex] = {
+          ...userMsg,
+          content: [...textParts, ...imageParts],
+        } as (typeof messages)[number]
+      }
+    }
+
     const isNewConversation = !requestBody.conversationId
     const conversationId = requestBody.conversationId ?? crypto.randomUUID()
 
@@ -150,7 +204,7 @@ export async function POST(req: Request) {
     // streamText関数を使うと、AIの回答を少しずつ（ストリーミング）返せる
     const result = await streamText({
       model: openai('gpt-4o-mini'), // コストが安くて高速なモデルを指定
-      system: 'あなたは親切で分かりやすい塾の先生です。中高生の学習をサポートしてください。数式は必ずLaTeX形式($...$ または $$...$$)で記述してください。角括弧 [] や [ ] は数式デリミタとして使用しないでください。', // AIへの「役割」指示
+      system: 'あなたは親切で分かりやすい塾の先生です。中高生の学習をサポートしてください。数式は必ずLaTeX形式($...$ または $$...$$)で記述してください。角括弧 [] や [ ] は数式デリミタとして使用しないでください。画像が添付されている場合は、画像の内容を確認して回答に反映してください。教科書の写真や問題用紙の場合は、写っている問題を読み取って解説してください。', // AIへの「役割」指示
       messages, // ModelMessage[]
       // 必要があればここに temperature (創造性) などを設定可能
       onFinish: async (event) => {
