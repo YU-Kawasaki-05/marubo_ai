@@ -9,7 +9,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { CsvImportForm } from '../../../src/features/admin/allowlist/components/CsvImportForm'
 import { useAllowlistMutations } from '../../../src/features/admin/allowlist/hooks/useAllowlistMutations'
@@ -69,7 +69,7 @@ export default function AllowlistPage() {
     headers, // 定義済みの headers を渡す
   })
 
-  const { updateAllowedEmail, importCsv } = useAllowlistMutations({ headers })
+  const { createAllowedEmail, updateAllowedEmail, importCsv } = useAllowlistMutations({ headers })
 
   // セッション確認中またはデータ読み込み中の表示
   if (isCheckingSession || loading) {
@@ -164,6 +164,15 @@ export default function AllowlistPage() {
         </div>
       </section>
 
+      <AddStudentForm
+        onAdd={async (input) => {
+          await createAllowedEmail(input)
+          setFlash({ type: 'success', text: `${input.email} を登録しました` })
+          refetch()
+        }}
+        onError={(msg) => setFlash({ type: 'error', text: msg })}
+      />
+
       <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
           <div className="space-y-1">
@@ -243,6 +252,121 @@ export default function AllowlistPage() {
 type StatusDropdownProps = {
   current: AllowedEmailStatus
   onRequestChange: (status: AllowedEmailStatus) => void
+}
+
+type AddStudentFormProps = {
+  onAdd: (input: { email: string; status: 'active'; label: string | null }) => Promise<void>
+  onError: (message: string) => void
+}
+
+function AddStudentForm({ onAdd, onError }: AddStudentFormProps) {
+  const [email, setEmail] = useState('')
+  const [label, setLabel] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [isOpen, setIsOpen] = useState(false)
+
+  const handleSubmit = useCallback(async (e: React.FormEvent) => {
+    e.preventDefault()
+    const trimmed = email.trim().toLowerCase()
+    if (!trimmed) return
+
+    // 簡易メール形式チェック
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      onError('メールアドレスの形式が正しくありません。')
+      return
+    }
+
+    setSubmitting(true)
+    try {
+      await onAdd({
+        email: trimmed,
+        status: 'active',
+        label: label.trim() || null,
+      })
+      setEmail('')
+      setLabel('')
+      setIsOpen(false)
+    } catch (err) {
+      onError(err instanceof Error ? err.message : '登録に失敗しました。')
+    } finally {
+      setSubmitting(false)
+    }
+  }, [email, label, onAdd, onError])
+
+  if (!isOpen) {
+    return (
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setIsOpen(true)}
+          className="flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-800"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          生徒を個別登録
+        </button>
+      </section>
+    )
+  }
+
+  return (
+    <section className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 shadow-sm">
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-bold text-slate-700">生徒を個別登録</h3>
+        <button
+          type="button"
+          onClick={() => setIsOpen(false)}
+          className="text-sm text-slate-400 hover:text-slate-600"
+          aria-label="閉じる"
+        >
+          &times;
+        </button>
+      </div>
+      <form onSubmit={handleSubmit} className="flex flex-col gap-3 md:flex-row md:items-end">
+        <div className="flex-1">
+          <label htmlFor="add-email" className="block text-xs font-medium text-slate-600 mb-1">
+            メールアドレス <span className="text-red-500">*</span>
+          </label>
+          <input
+            id="add-email"
+            type="email"
+            required
+            placeholder="student@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+            disabled={submitting}
+          />
+        </div>
+        <div className="md:w-48">
+          <label htmlFor="add-label" className="block text-xs font-medium text-slate-600 mb-1">
+            ラベル（任意）
+          </label>
+          <input
+            id="add-label"
+            type="text"
+            placeholder="2025, 高1 など"
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+            className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
+            disabled={submitting}
+          />
+        </div>
+        <button
+          type="submit"
+          disabled={submitting || !email.trim()}
+          className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors"
+        >
+          {submitting ? '登録中...' : '登録'}
+        </button>
+      </form>
+      <p className="mt-2 text-xs text-slate-500">
+        登録された生徒は active ステータスで追加され、すぐにチャット・レポート等すべての機能を利用できます。
+      </p>
+    </section>
+  )
 }
 
 function StatusDropdown({ current, onRequestChange }: StatusDropdownProps) {
