@@ -230,11 +230,6 @@ function ChatSession({
       // アップロード完了後にプレビューをクリア
       attachments.clearAll()
 
-      // UsageBadge 更新トリガー（サーバー側 incrementUsage との遅延を考慮し 1s 後に発火）
-      if (onMessageComplete) {
-        setTimeout(onMessageComplete, 1000)
-      }
-
       // sendMessage 完了後、最新の会話一覧を取得して
       // 新しく作成された会話のIDを親に通知する
       // （API は x-conversation-id ヘッダーで返すが、useChat 経由では取得できないため、
@@ -259,6 +254,12 @@ function ChatSession({
       }
     } catch (err) {
       console.error(err)
+    } finally {
+      // UsageBadge 更新トリガー（サーバー側 incrementUsage との遅延を考慮し 1s 後に発火）
+      // sendMessage の成否にかかわらず呼ぶ（サーバー側でカウント済みの場合に表示を同期）
+      if (onMessageComplete) {
+        setTimeout(onMessageComplete, 1000)
+      }
     }
   }
 
