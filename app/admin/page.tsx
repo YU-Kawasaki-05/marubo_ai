@@ -99,8 +99,11 @@ export default function AdminDashboardPage() {
           <p className="text-sm text-slate-600">各管理機能にアクセスできます。</p>
         </div>
         <div className="flex items-center gap-4">
+          <Link href="/chat" className="text-sm text-indigo-600 hover:underline">
+            チャットを試す
+          </Link>
           <LogoutButton />
-          <Link href="/" className="text-sm text-indigo-600 hover:underline">
+          <Link href="/" className="text-sm text-slate-500 hover:underline">
             戻る
           </Link>
         </div>

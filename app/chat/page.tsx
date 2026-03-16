@@ -19,6 +19,7 @@ function ChatPageContent() {
   // URL の ?c=xxx から会話 ID を初期化（リロード耐性）
   const [selectedId, setSelectedId] = useState<string>(searchParams.get('c') ?? '')
   const [token, setToken] = useState<string | null>(null)
+  const [isStaff, setIsStaff] = useState(false)
   const [showSessionExpired, setShowSessionExpired] = useState(false)
 
   // サイドバーを強制的に再レンダリングするためのキー（新規会話作成時などに更新）
@@ -53,7 +54,12 @@ function ChatPageContent() {
 
     // 初期化
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) setToken(session.access_token)
+      if (session) {
+        setToken(session.access_token)
+        if (session.user?.app_metadata?.role === 'staff') {
+          setIsStaff(true)
+        }
+      }
     })
 
     // 変更監視: イベント種別に応じたハンドリング
@@ -142,6 +148,14 @@ function ChatPageContent() {
             >
               レポート
             </Link>
+            {isStaff && (
+              <Link
+                href="/admin"
+                className="text-sm text-slate-500 hover:text-slate-700 transition-colors"
+              >
+                管理画面
+              </Link>
+            )}
             <LogoutButton />
             <Link
               href="/"
