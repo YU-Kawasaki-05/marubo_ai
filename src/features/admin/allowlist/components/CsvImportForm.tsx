@@ -36,6 +36,17 @@ export function CsvImportForm({ onImport }: { onImport: (csv: string, mode: 'ins
     setDetectedEncoding('')
   }
 
+  const handleClearFile = () => {
+    setFile(null)
+    setCsvText('')
+    setPreview(null)
+    setIsUpsert(false)
+    setDetectedEncoding('')
+    if (document.querySelector('input[type="file"]') instanceof HTMLInputElement) {
+      (document.querySelector('input[type="file"]') as HTMLInputElement).value = ''
+    }
+  }
+
   const handlePreview = async () => {
     if (!file) return
 
@@ -123,13 +134,23 @@ export function CsvImportForm({ onImport }: { onImport: (csv: string, mode: 'ins
       </div>
       
       {file && (
-        <div className="mt-4 rounded bg-slate-50 p-4 text-sm text-slate-600">
-          選択中: <strong>{file.name}</strong> ({(file.size / 1024).toFixed(1)} KB)
-          {detectedEncoding && (
-            <span className="ml-2 rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
-              {detectedEncoding}
-            </span>
-          )}
+        <div className="mt-4 flex items-center rounded bg-slate-50 p-4 text-sm text-slate-600">
+          <span>
+            選択中: <strong>{file.name}</strong> ({(file.size / 1024).toFixed(1)} KB)
+            {detectedEncoding && (
+              <span className="ml-2 rounded bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-600">
+                {detectedEncoding}
+              </span>
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={handleClearFile}
+            className="ml-3 text-sm text-slate-400 hover:text-red-500"
+            title="ファイル選択を取り消す"
+          >
+            ✕
+          </button>
         </div>
       )}
 
