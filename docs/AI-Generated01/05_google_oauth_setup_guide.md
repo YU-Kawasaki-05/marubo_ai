@@ -56,9 +56,10 @@ Google Cloud Console と Supabase Dashboard の設定手順をまとめたもの
 
 ### 2-4. 承認済みドメイン（Authorized domains）
 
-- 「ドメインを追加」をクリックして以下を追加:
-  - `supabase.co`
-- 本番デプロイ後に独自ドメインがある場合はそれも追加する
+- **空欄のままでOK**（スキップして次へ進む）
+- `supabase.co` は共有ドメインのため Google に拒否される（「無効なドメイン」エラー）
+- この項目は OAuth 同意画面の表示用であり、実際の認証フローには影響しない
+- 本番デプロイ後に独自ドメインがある場合のみ追加する（例: `marubo-ai.com`）
 
 ### 2-5. デベロッパーの連絡先情報
 
@@ -79,25 +80,30 @@ Google Cloud Console と Supabase Dashboard の設定手順をまとめたもの
 
 ### 2-8. テストユーザー（Test users）
 
-- 「外部」を選んだ場合、アプリは「テスト」ステータスで作成される
-- テストユーザーを追加する:
-  - 「ユーザーを追加」をクリック
-  - β版で使用する生徒・スタッフのGmailアドレスを追加
-  - **重要**: テストステータスでは、ここに追加したユーザーのみがログインできる
-- 「保存して次へ」をクリック
+- **テストユーザーは追加せず、空欄のまま「保存して次へ」をクリック**
+- アクセス制御は Supabase 側の allowlist で行うため、
+  Google 側でユーザーを制限する必要はない
 
 ### 2-9. 概要
 
 - 内容を確認し、「ダッシュボードに戻る」をクリック
 
-### 2-10. 公開ステータスの変更（β版リリース時）
+### 2-10. アプリを「本番」に公開する
 
-- テストステータスのままだと、登録したテストユーザーしかログインできない
-- β版の全ユーザーがログインできるようにするには:
-  1. 「OAuth 同意画面」ページに戻る
-  2. 「公開ステータス」セクションの **「アプリを公開」** をクリック
-  3. 確認ダイアログで「確認」をクリック
-- **注意**: email / profile / openid スコープのみなので、Google の審査なしで即座に公開される
+> **重要**: この手順は 2-9 の直後に行ってください。
+> テストステータスのままだと、テストユーザーに登録したアカウントしかログインできません。
+
+1. 「OAuth 同意画面」ページに戻る
+2. 「公開ステータス」セクションの **「アプリを公開」** をクリック
+3. 確認ダイアログで「確認」をクリック
+
+**公開してもリスクはありません:**
+- 使用スコープが email / profile / openid（機密でないスコープ）のみのため、
+  Google の審査なしで即座に公開される
+- 「誰でもログインできる」状態になるが、実際のアクセス制御は
+  Supabase 側の allowlist（`/admin/allowlist`）で行うため、
+  allowlist に未登録のメールではアプリを利用できない
+- つまり Google 側は「全員許可」、Supabase 側で「allowlist 制御」という二層構成
 
 ---
 
@@ -117,7 +123,8 @@ Google Cloud Console と Supabase Dashboard の設定手順をまとめたもの
 
 - 「URI を追加」をクリックして以下を追加:
   - `http://localhost:3000`（ローカル開発用）
-  - 本番ドメインがある場合はそれも追加（例: `https://marubo-ai.vercel.app`）
+  - **TODO（本番デプロイ時）**: 本番ドメインを追加する（例: `https://marubo-ai.vercel.app`）
+    - 本番ドメインが決まったらここに追加しないと、本番環境で Google ログインが動作しない
 
 ### 3-2. 承認済みのリダイレクト URI（Authorized redirect URIs）
 
@@ -196,7 +203,7 @@ Client Secret: GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxxx
 2. `http://localhost:3000/login` にアクセス
 3. 「Google でログイン」ボタンをクリック
 4. Google のログイン画面が表示される
-5. テストユーザー（Step 2-8 で登録したアカウント）でログイン
+5. allowlist に登録済み（active）の Google アカウントでログイン
 6. `/chat` にリダイレクトされることを確認
 
 ### 確認ポイント
@@ -218,14 +225,14 @@ Client Secret: GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxxx
 
 ### 「access_denied」エラー
 
-- **原因**: OAuth 同意画面がテストステータスで、ログインしようとしたユーザーがテストユーザーに登録されていない
-- **対処**: Step 2-8 でテストユーザーを追加するか、Step 2-10 でアプリを公開する
+- **原因**: OAuth 同意画面がテストステータスのままになっている
+- **対処**: Step 2-10 でアプリを「本番」に公開する
 
 ### 「This app isn't verified」警告画面
 
 - **原因**: OAuth 同意画面が未検証状態
-- **対処**: β版では「Advanced」>「Go to Marubo AI (unsafe)」で続行可能。
-  気になる場合は Step 2-10 でアプリを公開する（email/profile/openid のみなら審査不要）
+- **対処**: Step 2-10 でアプリを公開済みなら表示されないはず。
+  表示される場合は「Advanced」>「Go to Marubo AI (unsafe)」で続行可能
 
 ### Google ログイン後に allowlist エラーが出る
 
@@ -244,8 +251,8 @@ Client Secret: GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxxx
 - [ ] Google Cloud Console の「承認済みの JavaScript 生成元」に本番ドメインを追加
 - [ ] Supabase Dashboard の「Site URL」を本番ドメインに変更
 - [ ] Supabase Dashboard の「Redirect URLs」に本番ドメインのワイルドカードを追加
-- [ ] OAuth 同意画面のステータスを「公開」に変更（Step 2-10）
-- [ ] 全テストユーザー（β版の約20名）が allowlist に active で登録されていることを確認
+- [ ] OAuth 同意画面が「本番」ステータスであることを確認（Step 2-10 で設定済みのはず）
+- [ ] β版の全ユーザーが allowlist に active で登録されていることを確認
 
 ---
 

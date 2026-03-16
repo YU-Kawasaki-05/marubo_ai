@@ -103,6 +103,8 @@
 | GFX-36 | (新規) | 許可メール一覧の検索・フィルタ即時リロード解消 | Sprint 6 |
 | GFX-37 | (新規) | 許可メール一覧に生徒の個別登録フォーム追加 | 実装済み |
 | GFX-38 | (新規) | Google OAuth ログインの導入 | Critical (β版リリース前) |
+| GFX-39 | (新規) | CSV インポートのファイル選択キャンセル機能 | Sprint 6 |
+| GFX-40 | (新規) | ロール別ナビゲーション（スタッフに管理画面リンク） | Sprint 6 |
 
 ---
 
@@ -3667,6 +3669,231 @@ Acceptance Criteria (Done)
 
 ---
 
+## GFX-39: CSV インポートのファイル選択キャンセル機能
+
+```text
+[Task Title]
+/admin/allowlist の CSV インポートフォームにファイル選択のキャンセルボタンを追加する
+
+Goal
+- 一度選択した CSV ファイルを「キャンセル」して、アップロード前の初期状態に戻せるようにする。
+- 現状はファイルを選択すると、別のファイルを選び直す以外にリセットする方法がない。
+
+Background — なぜ必要か
+- UAT テスト中に、誤ったファイルを選択した場合や、やっぱりアップロードしたくない場合に
+  リセット手段がないことが判明。
+- 特にスタッフが本番環境で操作する場合、誤操作防止のために明示的なキャンセル手段が必要。
+- 現在の CsvImportForm は file 選択後に「プレビュー」→「一括登録を実行」のフローだが、
+  途中で取りやめる UI がない。
+
+Context — 現在の実装
+
+  ファイル: src/features/admin/allowlist/components/CsvImportForm.tsx
+
+  - L22: `const [file, setFile] = useState<File | null>(null)`
+  - L30-37: `handleFileChange` でファイル選択時に state を更新
+  - L88: インポート成功後に `inputRef.current.value = ''` で file input をリセット
+  - L125-134: ファイル選択後の状態表示（ファイル名・サイズ）
+
+  問題: ファイル選択後の状態表示エリアに「×」ボタンやキャンセルリンクがない。
+  ファイルを選び直すには、再度 <input type="file"> をクリックする必要がある。
+
+Scope
+- 変更OK:
+  - src/features/admin/allowlist/components/CsvImportForm.tsx
+- 変更NG:
+  - API / バックエンドロジック（変更不要）
+
+Implementation — Step-by-Step
+
+Step 1: キャンセル（クリア）関数を追加する
+  ファイル: src/features/admin/allowlist/components/CsvImportForm.tsx
+
+  const handleClearFile = () => {
+    setFile(null)
+    setCsvText('')
+    setPreview([])
+    setIsUpsert(false)
+    setDetectedEncoding(null)
+    if (inputRef.current) {
+      inputRef.current.value = ''
+    }
+  }
+
+Step 2: ファイル選択後の状態表示に「× キャンセル」ボタンを追加する
+  L125-134 のファイル情報表示エリアに:
+
+  <button
+    type="button"
+    onClick={handleClearFile}
+    className="ml-2 text-sm text-slate-400 hover:text-red-500"
+    title="ファイル選択を取り消す"
+  >
+    ✕
+  </button>
+
+  あるいは「キャンセル」テキストリンクでもよい。
+  ファイル名の横に配置し、クリックで初期状態に戻す。
+
+Acceptance Criteria (Done)
+- [ ] ファイル選択後に「×」またはキャンセルボタンが表示される
+- [ ] クリックでファイル選択が解除され、初期状態に戻る
+- [ ] プレビュー表示済みの場合もクリアされる
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
+## GFX-40: ロール別ナビゲーション — スタッフに管理画面リンク、生徒にはシンプルなヘッダー
+
+```text
+[Task Title]
+チャット画面のヘッダーにロールベースのナビゲーションを追加する
+（スタッフには管理画面リンク、生徒には表示しない）
+
+Goal
+- スタッフが /chat にアクセスした際に、/admin（管理画面）へのリンクが
+  ヘッダーに表示されるようにする。
+- 生徒にはこのリンクを表示しない（UX をシンプルに保つ）。
+- 管理画面（/admin）からチャット画面への導線も整備し、
+  スタッフが両画面をスムーズに行き来できるようにする。
+
+Background — なぜ必要か
+- 現在、スタッフが /chat にアクセスすると、/admin に戻る手段がない。
+  URL を手入力するか、ログアウト→再ログインするしかない。
+- 一方、/admin ダッシュボードには「戻る → /」のリンクがあるが、
+  /chat への明示的なリンクがない。
+- スタッフは「生徒としてチャットを試す（動作確認）」と「管理業務」を
+  頻繁に行き来するため、双方向のナビゲーションが必要。
+- 生徒にとっては管理画面は無関係であり、リンクが見えると混乱を招く。
+
+Context — 現在のナビゲーション構造
+
+  /chat ヘッダー（app/chat/page.tsx）:
+    左: ハンバーガーメニュー（モバイル）+ "Marubo AI" + "Beta" バッジ
+    右: UsageBadge + "レポート" リンク + ログアウトボタン + "✕ 閉じる" リンク
+    → スタッフ向けリンクなし
+
+  /admin ダッシュボード（app/admin/page.tsx）:
+    右上: "ログアウト" + "戻る（/）" リンク
+    → /chat への明示的なリンクなし
+
+  middleware.ts:
+    → 認証チェックのみ。ロールチェックなし。
+    → スタッフも生徒も /chat にアクセス可能（これは正しい動作）。
+
+  ロール判定方法:
+    → Supabase の session.user.app_metadata.role で判定可能
+    → 'staff' = スタッフ、'student' = 生徒
+    → GFX-35 で sync-user が自動設定する前提
+
+設計方針 — ユーザー体験の最適化
+
+  ■ 生徒の体験:
+    - ヘッダーはシンプルなまま維持（現状と同じ）
+    - 余計なリンクやアイコンは一切表示しない
+    - 「学習に集中できる」UI を損なわない
+
+  ■ スタッフの体験:
+    - /chat ヘッダーに控えめな「管理画面」リンクを追加
+    - /admin ダッシュボードに「チャットを試す」リンクを追加
+    - 両画面をワンクリックで行き来できる
+
+  ■ なぜ共通ナビバーではなくヘッダー内リンクにするか:
+    - 共通ナビバーを導入すると、生徒の画面にも影響が出る
+    - 画面の構造が大きく変わり、変更範囲が広がる
+    - β版20名の規模では、ヘッダーにリンク1つで十分
+    - 将来スケール時にはサイドナビやドロワーを検討する
+
+Scope
+- 変更OK:
+  - app/chat/page.tsx（ヘッダーにスタッフ向けリンク追加）
+  - app/admin/page.tsx（「チャットを試す」リンク追加）
+- 変更NG:
+  - middleware.ts（ロールチェック不要 — 両方アクセス可能でよい）
+  - app/admin/*/page.tsx の個別ページ（ダッシュボードのみで十分）
+  - ChatInterface.tsx（ヘッダーは page.tsx 側で管理）
+
+Implementation — Step-by-Step
+
+Step 1: セッションからユーザーロールを取得するヘルパーを用意する
+
+  既存のセッション取得処理を活用。app/chat/page.tsx は client component のため、
+  Supabase Browser Client からセッションを取得し、app_metadata.role を参照する。
+
+  const [isStaff, setIsStaff] = useState(false)
+
+  useEffect(() => {
+    const supabase = getSupabaseBrowserClient()
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.app_metadata?.role === 'staff') {
+        setIsStaff(true)
+      }
+    })
+  }, [])
+
+Step 2: /chat ヘッダーにスタッフ向け「管理画面」リンクを追加する
+
+  ファイル: app/chat/page.tsx
+  配置: ヘッダー右側の「レポート」リンクの隣（ログアウトの前）
+
+  {isStaff && (
+    <Link
+      href="/admin"
+      className="text-sm text-slate-500 hover:text-slate-700 transition-colors"
+    >
+      管理画面
+    </Link>
+  )}
+
+  デザイン:
+    - 既存の「レポート」リンクと同じスタイル（控えめなテキストリンク）
+    - アイコンは不要（テキストで十分明確）
+    - 生徒の目に入らないため、目立つ必要はない
+
+Step 3: /admin ダッシュボードに「チャットを試す」リンクを追加する
+
+  ファイル: app/admin/page.tsx
+  配置: ヘッダーの「戻る」リンクの近く、またはダッシュボードカードとして
+
+  案A（ヘッダーリンク）:
+    <Link href="/chat" className="text-sm text-blue-600 hover:underline">
+      チャットを試す →
+    </Link>
+
+  案B（ダッシュボードカードとして追加）:
+    既存の4枚のカード（許可リスト・権限管理・会話検索・レポート管理）に加えて、
+    「チャットを試す」カードを追加。
+    → 案B は他のカードと並列になり、管理機能ではないため違和感がある。
+    → 案A のヘッダーリンクが適切。
+
+Risks / Follow-ups
+- GFX-35 への依存:
+  app_metadata.role が設定されていないユーザーは isStaff = false になる。
+  GFX-35 適用前の既存ユーザーは手動で SQL 設定済み（今回の UAT 対応）。
+  GFX-35 適用後は自動設定されるため問題なし。
+- セッション取得の非同期性:
+  useEffect でセッションを取得するため、初回レンダリング時は isStaff = false。
+  リンクが一瞬遅れて表示されるが、ヘッダーの小さなリンクなので
+  レイアウトシフトはほぼ気にならない。
+- /admin のアクセス制御:
+  現在 middleware.ts はロールチェックをしていないため、
+  生徒が URL 直打ちで /admin にアクセスすることは技術的に可能。
+  ただし /admin の各ページは API 側で staff 認証を行うため、
+  データは取得できない（403 になる）。β版では許容。
+  将来的に middleware でロールチェックを追加することを推奨（別 GFX）。
+
+Acceptance Criteria (Done)
+- [ ] スタッフが /chat にアクセスすると、ヘッダーに「管理画面」リンクが表示される
+- [ ] 生徒が /chat にアクセスしても、「管理画面」リンクは表示されない
+- [ ] 「管理画面」リンクをクリックすると /admin に遷移する
+- [ ] /admin ダッシュボードに「チャットを試す」リンクがあり、/chat に遷移する
+- [ ] モバイルでもリンクが適切に表示される
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
 ## 4. 実装ロードマップサマリー
 
 ```
@@ -3712,9 +3939,11 @@ Gate H（GFX-31 の前に実施）: GFX-32
 Sprint 5: GFX-30
   → HEIC/HEIF 画像のクライアント変換対応（iPhone ユーザー UX）
 
-Sprint 6: GFX-36, GFX-37（実装済み）
+Sprint 6: GFX-36, GFX-37（実装済み）, GFX-39, GFX-40
   → GFX-36: 許可メール一覧の検索・フィルタ即時リロード解消（デバウンス + インラインローディング）
   → GFX-37: 許可メール一覧に生徒の個別登録フォーム追加（実装済み）
+  → GFX-39: CSV インポートのファイル選択キャンセルボタン追加
+  → GFX-40: ロール別ナビゲーション（スタッフ→管理画面リンク、admin→チャットリンク）
 
 Critical (β版リリース前): GFX-38
   → Google OAuth ログインの導入（Google でログインボタン追加）

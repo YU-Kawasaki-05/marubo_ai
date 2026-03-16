@@ -106,6 +106,7 @@
 | **OPS-07** | review | 監視・通知導入 | **Step 1** (review): `src/shared/lib/notifier.ts` を実装（BE-16 と連動）。S1/S2/S3 重大度方針 + 5分デバウンス + Resend メール送信。<br>**Step 2** (todo): `ADMIN_EMAILS` / `MAIL_FROM` を本番環境に設定（手動作業）。 |
 | **OPS-08** | review | 本番環境の秘密情報管理 | (実装済み) `.env.example` を刷新: カテゴリ別コメント付き、全使用中 ENV を網羅（`MONTHLY_QUOTA`, `MOCK_SUPABASE`, `CRON_SECRET` 等を追加）。`docs/deployment.md` の ENV セクションを「必須/任意」テーブル形式に整理、設定場所・デフォルト値・注意事項を明記。 |
 | **OPS-09** | todo | Supabase Redirect URL 設定（パスワードリセット用） | **手動作業**: Supabase Dashboard > Auth > URL Configuration > Redirect URLs に `https://<本番ドメイン>/reset-password` を追加する。ローカル開発では `http://localhost:3000/reset-password` も追加が必要な場合あり。GAP-15（パスワードリセット機能）で必要。 |
+| **OPS-10** | progress | Google OAuth 設定 | **手動作業（途中）**: Google Cloud Console でプロジェクト作成・OAuth 同意画面設定まで完了。**残り**: Step 3（OAuth Client ID 作成）→ Step 4（Supabase Provider 有効化）→ Step 5（Redirect URL 確認）。**本番デプロイ時**: JavaScript 生成元に本番ドメイン追加が必要（現在は `localhost:3000` のみ）。手順書: `docs/AI-Generated01/05_google_oauth_setup_guide.md` |
 
 ### 6. チャット機能実装 (CHAT)
 

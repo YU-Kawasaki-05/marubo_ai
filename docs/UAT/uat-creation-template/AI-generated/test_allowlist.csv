@@ -1,0 +1,3 @@
+email,status,label,notes
+uat_csv_test1@gmail.com,active,CSVテスト1,テスト用
+uat_csv_test2@gmail.com,pending,CSVテスト2,テスト用

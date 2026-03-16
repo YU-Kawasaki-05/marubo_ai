@@ -131,11 +131,21 @@
 ## 次の作業候補
 - **GFX-34**: 会話 ID の URL 管理と画面遷移の安定化（リロード耐性・新規チャット・自動リロード解消）
   - 詳細: `docs/AI-Generated01/04_fix_gap_commands.md` の GFX-34 セクション参照
+- **GFX-35**: sync-user で app_metadata.role 自動設定（Blocker — 新規生徒が機能を使えない）
+- **GFX-36**: 許可メール一覧の検索・フィルタ即時リロード解消
+- **GFX-38**: Google OAuth ログイン導入（Google Cloud Console 設定途中 → Step 3 から再開）
 
 ## 設計判断メモ（将来の参照用）
 - **ルートページ（`/`）**: β版では `/chat` にリダイレクト（LP 不要）。一般公開時にランディングページが必要になったらリダイレクトを外して `app/page.tsx` に LP コンポーネントを置けばよい。
 
 ## 既知の問題・注意点
+- **Google OAuth 設定が未完了**（GFX-38 で対応予定）:
+  - Google Cloud Console のプロジェクト作成・OAuth 同意画面設定・アプリ公開は完了
+  - **未完了**: OAuth Client ID の作成（Step 3）— JavaScript 生成元は `localhost:3000` のみ登録済み
+  - **未完了**: Supabase Dashboard で Google Provider 有効化（Step 4）— **Supabase Admin 権限が必要**
+  - **未完了**: コード実装（login ページに Google ボタン追加）
+  - **未完了**: 本番ドメインの JavaScript 生成元 / リダイレクト URI 追加（本番デプロイ時）
+  - 設定手順: `docs/AI-Generated01/05_google_oauth_setup_guide.md`
 - `docs/situation/001_20260215.md` が unstaged deleted として常に表示される（スコープ外、無視してよい）
 - 署名 URL は有効期限あり（表示用10分、アップロード用60秒）。長時間放置で期限切れ
 - `pnpm build` は Supabase 環境変数が必要（CI/ローカルでは NEXT_PUBLIC_SUPABASE_URL 等が必要）
