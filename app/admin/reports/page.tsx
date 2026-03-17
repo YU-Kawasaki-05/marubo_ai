@@ -291,7 +291,7 @@ export default function AdminReportsPage() {
         </div>
         <div className="flex items-center gap-4">
           <LogoutButton />
-          <Link href="/" className="text-sm text-indigo-600 hover:underline">
+          <Link href="/admin" className="text-sm text-indigo-600 hover:underline">
             戻る
           </Link>
         </div>
