@@ -93,7 +93,7 @@ export async function listConversations(
         pagination: { page, limit, total: 0, totalPages: 0 },
       }
     }
-    filteredUserIds = (users as AppUserRow[]).map((u) => u.id)
+    filteredUserIds = (users as AppUserRow[]).map((u) => u.auth_uid)
   }
 
   // Step 2: build conversations query with filters + server-side pagination
@@ -151,11 +151,11 @@ export async function listConversations(
 
   // Step 4: resolve user info
   const userIds = [...new Set(pagedConvs.map((c) => c.user_id))]
-  const { data: users } = await supabase.from('app_user').select().in('id', userIds)
+  const { data: users } = await supabase.from('app_user').select().in('auth_uid', userIds)
 
   const userMap = new Map<string, AppUserRow>()
   for (const u of (users as AppUserRow[]) ?? []) {
-    userMap.set(u.id, u)
+    userMap.set(u.auth_uid, u)
   }
 
   // Step 5: assemble response
@@ -201,7 +201,7 @@ export async function getConversationDetail(
   const { data: user } = await supabase
     .from('app_user')
     .select()
-    .eq('id', conv.user_id)
+    .eq('auth_uid', conv.user_id)
     .single()
 
   const appUser = user as AppUserRow | null

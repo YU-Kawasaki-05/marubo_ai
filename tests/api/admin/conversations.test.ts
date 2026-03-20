@@ -54,19 +54,19 @@ async function seedData() {
   await supabase.from('conversations').insert([
     {
       id: 'conv-1',
-      user_id: 'student-taro-id',
+      user_id: 'student-taro-auth',
       title: '二次方程式の解き方',
       created_at: '2026-02-15T10:00:00Z',
     },
     {
       id: 'conv-2',
-      user_id: 'student-hanako-id',
+      user_id: 'student-hanako-auth',
       title: '英語の文法について',
       created_at: '2026-02-20T14:00:00Z',
     },
     {
       id: 'conv-3',
-      user_id: 'student-hanako-id',
+      user_id: 'student-hanako-auth',
       title: '連立方程式の応用問題',
       created_at: '2026-02-25T09:00:00Z',
     },
@@ -123,7 +123,7 @@ async function seedData() {
     {
       id: 'att-1',
       message_id: 'msg-3c',
-      user_id: 'student-hanako-id',
+      user_id: 'student-hanako-auth',
       storage_path: 'student-hanako-id/abc123.png',
       mime_type: 'image/png',
       size_bytes: 102400,

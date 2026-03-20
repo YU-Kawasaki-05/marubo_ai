@@ -44,13 +44,13 @@ async function seedData() {
   await supabase.from('conversations').insert([
     {
       id: 'auth-conv-1',
-      user_id: 'student-a-id',
+      user_id: 'student-a-auth',
       title: 'Student A の会話',
       created_at: '2026-02-20T10:00:00Z',
     },
     {
       id: 'auth-conv-2',
-      user_id: 'student-b-id',
+      user_id: 'student-b-auth',
       title: 'Student B の会話',
       created_at: '2026-02-21T10:00:00Z',
     },
