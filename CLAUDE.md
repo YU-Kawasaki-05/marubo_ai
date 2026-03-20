@@ -127,23 +127,24 @@
 | — | GFX-31 | 添付画像を gpt-4o-mini Vision に渡す Image-to-LLM パイプライン |
 | — | GFX-32 | Supabase Storage `attachments` バケット作成 + ポリシー設定（マイグレーション） |
 | — | GFX-33 | 画像のみ送信時のメッセージ保存・サムネイル即時表示・フォールバック改善 |
+| #76/#77 | GFX-34 | 会話 ID の URL 管理と画面遷移の安定化（リロード耐性・新規チャット） |
+| #78 | GFX-35 | sync-user で app_metadata.role 自動設定（Blocker 修正） |
+| #79 | GFX-36 | 許可メール一覧の検索デバウンス・インライン更新表示 |
+| #80/#81/#82 | GFX-37 | 許可メール一覧に生徒の個別登録フォーム追加 |
+| #83 | GFX-39 | CSV インポートフォームにファイル選択キャンセルボタン追加 |
+| #84 | GFX-40 | チャット画面にスタッフ向け管理画面リンク、管理画面にチャットリンク追加 |
+| — | GFX-38 | Google OAuth ログイン導入（login ページに Google ボタン追加） |
 
 ## 次の作業候補
-- **GFX-34**: 会話 ID の URL 管理と画面遷移の安定化（リロード耐性・新規チャット・自動リロード解消）
-  - 詳細: `docs/AI-Generated01/04_fix_gap_commands.md` の GFX-34 セクション参照
-- **GFX-35**: sync-user で app_metadata.role 自動設定（Blocker — 新規生徒が機能を使えない）
-- **GFX-36**: 許可メール一覧の検索・フィルタ即時リロード解消
-- **GFX-38**: Google OAuth ログイン導入（Google Cloud Console 設定途中 → Step 3 から再開）
+- Backlog の GFX（GFX-19〜26）を優先度に応じて順次対応
+- 詳細: `docs/AI-Generated01/04_fix_gap_commands.md` のロードマップ参照
 
 ## 設計判断メモ（将来の参照用）
 - **ルートページ（`/`）**: β版では `/chat` にリダイレクト（LP 不要）。一般公開時にランディングページが必要になったらリダイレクトを外して `app/page.tsx` に LP コンポーネントを置けばよい。
 
 ## 既知の問題・注意点
-- **Google OAuth 設定が未完了**（GFX-38 で対応予定）:
-  - Google Cloud Console のプロジェクト作成・OAuth 同意画面設定・アプリ公開は完了
-  - **未完了**: OAuth Client ID の作成（Step 3）— JavaScript 生成元は `localhost:3000` のみ登録済み
-  - **未完了**: Supabase Dashboard で Google Provider 有効化（Step 4）— **Supabase Admin 権限が必要**
-  - **未完了**: コード実装（login ページに Google ボタン追加）
+- **Google OAuth 実装済み**（GFX-38 完了）:
+  - Google Cloud Console 設定・Supabase Provider 有効化・コード実装すべて完了
   - **未完了**: 本番ドメインの JavaScript 生成元 / リダイレクト URI 追加（本番デプロイ時）
   - 設定手順: `docs/AI-Generated01/05_google_oauth_setup_guide.md`
 - `docs/situation/001_20260215.md` が unstaged deleted として常に表示される（スコープ外、無視してよい）

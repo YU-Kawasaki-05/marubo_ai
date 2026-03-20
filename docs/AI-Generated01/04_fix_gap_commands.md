@@ -98,13 +98,13 @@
 | GFX-31 | (新規) | 添付画像を AI（Vision）に渡すパイプライン実装 | Critical |
 | GFX-32 | (新規) | Supabase Storage バケット・ポリシー設定（人間作業） | Gate H |
 | GFX-33 | (新規) | 画像添付メッセージの保存・表示修正（テキストなし送信対応） | Critical |
-| GFX-34 | (新規) | 会話 ID の URL 管理と画面遷移の安定化 | Critical |
-| GFX-35 | (新規) | sync-user で生徒の app_metadata.role 自動設定 | Critical (Blocker) |
-| GFX-36 | (新規) | 許可メール一覧の検索・フィルタ即時リロード解消 | Sprint 6 |
-| GFX-37 | (新規) | 許可メール一覧に生徒の個別登録フォーム追加 | 実装済み |
-| GFX-38 | (新規) | Google OAuth ログインの導入 | Critical (β版リリース前) |
-| GFX-39 | (新規) | CSV インポートのファイル選択キャンセル機能 | Sprint 6 |
-| GFX-40 | (新規) | ロール別ナビゲーション（スタッフに管理画面リンク） | Sprint 6 |
+| GFX-34 | (新規) | 会話 ID の URL 管理と画面遷移の安定化 | 実装済み (PR #76/#77) |
+| GFX-35 | (新規) | sync-user で生徒の app_metadata.role 自動設定 | 実装済み (PR #78) |
+| GFX-36 | (新規) | 許可メール一覧の検索・フィルタ即時リロード解消 | 実装済み (PR #79) |
+| GFX-37 | (新規) | 許可メール一覧に生徒の個別登録フォーム追加 | 実装済み (PR #80/#81/#82) |
+| GFX-38 | (新規) | Google OAuth ログインの導入 | 実装済み |
+| GFX-39 | (新規) | CSV インポートのファイル選択キャンセル機能 | 実装済み (PR #83) |
+| GFX-40 | (新規) | ロール別ナビゲーション（スタッフに管理画面リンク） | 実装済み (PR #84) |
 
 ---
 
@@ -2716,7 +2716,7 @@ Acceptance Criteria (Done)
 
 ---
 
-## GFX-34: 会話 ID の URL 管理と画面遷移の安定化
+## GFX-34: 会話 ID の URL 管理と画面遷移の安定化（実装済み PR #76/#77）
 
 ```text
 [Task Title]
@@ -3049,7 +3049,7 @@ Acceptance Criteria (Done)
 
 ---
 
-## GFX-35: sync-user で生徒の app_metadata.role を自動設定する
+## GFX-35: sync-user で生徒の app_metadata.role を自動設定する（実装済み PR #78）
 
 ```text
 [Task Title]
@@ -3296,7 +3296,7 @@ Acceptance Criteria (Done)
 
 ---
 
-## GFX-36: 許可メール一覧の検索・フィルタで画面がリロードされる問題の修正
+## GFX-36: 許可メール一覧の検索・フィルタで画面がリロードされる問題の修正（実装済み PR #79）
 
 ```text
 [Task Title]
@@ -3501,7 +3501,7 @@ Status: 実装済み（feat/gfx-37-individual-student-registration ブランチ�
 
 ---
 
-## GFX-38: Google OAuth ログインの導入
+## GFX-38: Google OAuth ログインの導入（実装済み）
 
 ```text
 [Task Title]
@@ -3671,7 +3671,7 @@ Acceptance Criteria (Done)
 
 ---
 
-## GFX-39: CSV インポートのファイル選択キャンセル機能
+## GFX-39: CSV インポートのファイル選択キャンセル機能（実装済み PR #83）
 
 ```text
 [Task Title]
@@ -3746,7 +3746,7 @@ Acceptance Criteria (Done)
 
 ---
 
-## GFX-40: ロール別ナビゲーション — スタッフに管理画面リンク、生徒にはシンプルなヘッダー
+## GFX-40: ロール別ナビゲーション — スタッフに管理画面リンク、生徒にはシンプルなヘッダー（実装済み PR #84）
 
 ```text
 [Task Title]
@@ -3917,7 +3917,7 @@ Critical: GFX-29
   → 会話継続・メッセージ保存・時系列の統合修正（チャット基本動作の根幹）
   → マイグレーション適用が必要（messages テーブルに seq 列追加）
 
-Critical (Blocker): GFX-35
+Critical (Blocker): GFX-35 ✅ 実装済み (PR #78)
   → sync-user で生徒の app_metadata.role = 'student' を自動設定
   → 全生徒が requireAuth() を通過できない致命的バグの修正
   → 既存ユーザーの自動リカバリ + ドキュメント更新含む
@@ -3926,13 +3926,10 @@ Hotfix: GFX-27, GFX-28
   → GFX-27: ログインリダイレクト先修正（1 行変更）
   → GFX-28: UsageBadge リアルタイム更新（UAT TC_B_010 対応）
 
-Critical: GFX-31, GFX-33, GFX-34
+Critical: GFX-31, GFX-33, GFX-34 ✅ すべて実装済み
   → GFX-31: 添付画像を AI（gpt-4o-mini Vision）に渡す Image-to-LLM パイプライン実装
   → GFX-33: 画像添付メッセージの保存・表示修正（テキストなし送信対応 + リアルタイムサムネイル）
-  → GFX-34: 会話 ID の URL 管理と画面遷移の安定化（リロード耐性・新規チャット・自動リロード解消）
-  → GFX-31 → GFX-33 は chat/route.ts を共に変更するため直列実行
-  → GFX-34 は page.tsx + ChatInterface.tsx 中心のため GFX-33 と並列可能
-  → GFX-32（Storage 設定）が GFX-31 の前提条件
+  → GFX-34: 会話 ID の URL 管理と画面遷移の安定化（PR #76/#77）
 
 Gate H（GFX-31 の前に実施）: GFX-32
   → Supabase Storage の attachments バケット作成 + ポリシー設定（人間作業）
@@ -3941,16 +3938,14 @@ Gate H（GFX-31 の前に実施）: GFX-32
 Sprint 5: GFX-30
   → HEIC/HEIF 画像のクライアント変換対応（iPhone ユーザー UX）
 
-Sprint 6: GFX-36, GFX-37（実装済み）, GFX-39, GFX-40
-  → GFX-36: 許可メール一覧の検索・フィルタ即時リロード解消（デバウンス + インラインローディング）
-  → GFX-37: 許可メール一覧に生徒の個別登録フォーム追加（実装済み）
-  → GFX-39: CSV インポートのファイル選択キャンセルボタン追加
-  → GFX-40: ロール別ナビゲーション（スタッフ→管理画面リンク、admin→チャットリンク）
+Sprint 6: GFX-36, GFX-37, GFX-39, GFX-40 ✅ すべて実装済み
+  → GFX-36: 許可メール一覧の検索・フィルタ即時リロード解消（PR #79）
+  → GFX-37: 許可メール一覧に生徒の個別登録フォーム追加（PR #80/#81/#82）
+  → GFX-39: CSV インポートのファイル選択キャンセルボタン追加（PR #83）
+  → GFX-40: ロール別ナビゲーション（PR #84）
 
-Critical (β版リリース前): GFX-38
+Critical (β版リリース前): GFX-38 ✅ 実装済み
   → Google OAuth ログインの導入（Google でログインボタン追加）
-  → GFX-35（sync-user で app_metadata.role 設定）が前提条件
-  → 設定手順: docs/AI-Generated01/05_google_oauth_setup_guide.md
 
 Backlog: GFX-19, GFX-20, GFX-21, GFX-22, GFX-23, GFX-24, GFX-25, GFX-26
   → 優先度に応じて順次対応
