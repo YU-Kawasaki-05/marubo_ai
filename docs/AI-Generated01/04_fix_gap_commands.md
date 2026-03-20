@@ -3524,8 +3524,10 @@ Background — なぜ必要か
   認証方式を問わず動作する。変更不要。
 
 前提条件
-- Google Cloud Console で OAuth Client ID/Secret を取得済みであること
-- Supabase Dashboard で Google Provider を有効化済みであること
+- [x] Google Cloud Console で OAuth Client ID/Secret を取得済み（Step 3 完了）
+      JavaScript 生成元: localhost:3000 のみ。本番ドメインは未追加（デプロイ時に対応）
+- [x] Supabase Dashboard で Google Provider を有効化済み（Step 4 完了）
+- [ ] Supabase Dashboard の Redirect URL 確認（Step 5 未確認）
 - 設定手順: docs/AI-Generated01/05_google_oauth_setup_guide.md を参照
 - GFX-35（sync-user で app_metadata.role 設定）が適用済みであること
 
