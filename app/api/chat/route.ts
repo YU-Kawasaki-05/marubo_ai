@@ -5,7 +5,7 @@
  *   添付画像は attachments テーブルにも永続化する（テキストなし＋画像のみの送信にも対応）。
  *   分間レート制限（10 req/min）と月間クォータ（100 問/月）を適用。
  *   添付枚数（3枚）・メッセージ文字数（2000文字）のサーバーサイドバリデーション。
- *   会話保存後に LLM（gpt-4o-mini）で20文字以内のタイトルを非同期生成。
+ *   会話保存後に LLM（CHAT_LLM_MODEL 環境変数、デフォルト gpt-4o-mini）で20文字以内のタイトルを非同期生成。
  * 入力：JSON { messages: UIMessage[], attachments?: { storagePath, mimeType, size }[], conversationId?: string }
  * 出力：Streaming Text Response
  * 依存：Vercel AI SDK, OpenAI, Supabase Auth/Storage, rateLimit
@@ -26,6 +26,9 @@ import { convertSafeMessages } from '@shared/utils/ai-message-converter'
 
 // Next.jsのEdge Runtimeではなく、互換性重視でNode.js Runtimeを使用
 export const runtime = 'nodejs'
+
+// チャット用 LLM モデル名（環境変数で切り替え可能）
+const CHAT_MODEL = process.env.CHAT_LLM_MODEL ?? 'gpt-4o-mini'
 
 // 環境変数からSupabase接続情報を作成
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
@@ -203,7 +206,7 @@ export async function POST(req: Request) {
     // 4. AI（OpenAI）に応答を生成させる
     // streamText関数を使うと、AIの回答を少しずつ（ストリーミング）返せる
     const result = await streamText({
-      model: openai('gpt-4o-mini'), // コストが安くて高速なモデルを指定
+      model: openai(CHAT_MODEL),
       system: 'あなたは親切で分かりやすい塾の先生です。中高生の学習をサポートしてください。数式は必ずLaTeX形式($...$ または $$...$$)で記述してください。角括弧 [] や [ ] は数式デリミタとして使用しないでください。画像が添付されている場合は、画像の内容を確認して回答に反映してください。教科書の写真や問題用紙の場合は、写っている問題を読み取って解説してください。', // AIへの「役割」指示
       messages, // ModelMessage[]
       // 必要があればここに temperature (創造性) などを設定可能
@@ -273,7 +276,7 @@ export async function POST(req: Request) {
                   ? `ユーザー: ${userText.slice(0, 200)}\nAI: ${assistantText.slice(0, 200)}`
                   : `AI: ${assistantText.slice(0, 200)}`
                 const titleResult = await generateText({
-                  model: openai('gpt-4o-mini'),
+                  model: openai(CHAT_MODEL),
                   prompt: `以下のユーザーの質問とAIの回答から、20文字以内の短い会話タイトルを生成してください。タイトルのみを出力してください。\n${titlePromptContext}`,
                 })
                 const generatedTitle = titleResult.text.trim().slice(0, 20)

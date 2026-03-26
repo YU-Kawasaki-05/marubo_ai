@@ -93,6 +93,7 @@ async function seedStudentWithMessages(month: string) {
 describe('POST /api/reports/monthly (mock supabase)', () => {
   beforeEach(() => {
     process.env.MOCK_SUPABASE = 'true'
+    process.env.REPORT_DELAY_MS = '0'
     delete process.env.CRON_SECRET
     delete process.env.RESEND_API_KEY
     delete process.env.ADMIN_EMAILS
@@ -270,7 +271,7 @@ describe('POST /api/reports/monthly (mock supabase)', () => {
 
     // Mock isLastDayOfMonth to return true
     const monthlyReport = await import('../../../src/shared/lib/monthlyReport')
-    vi.spyOn(monthlyReport, 'isLastDayOfMonth').mockReturnValue(true)
+    vi.spyOn(monthlyReport, 'isReportGenerationWindow').mockReturnValue(true)
     vi.spyOn(monthlyReport, 'getCurrentMonth').mockReturnValue('2026-02')
 
     await seedStudentWithMessages('2026-02')
@@ -297,7 +298,7 @@ describe('POST /api/reports/monthly (mock supabase)', () => {
     process.env.CRON_SECRET = CRON_SECRET
 
     const monthlyReport = await import('../../../src/shared/lib/monthlyReport')
-    vi.spyOn(monthlyReport, 'isLastDayOfMonth').mockReturnValue(false)
+    vi.spyOn(monthlyReport, 'isReportGenerationWindow').mockReturnValue(false)
 
     const res = await POST(
       new Request(BASE_URL, {
@@ -312,7 +313,7 @@ describe('POST /api/reports/monthly (mock supabase)', () => {
     const body = await parseJson(res)
     expect(res.status).toBe(200)
     expect(body.data.skipped).toBe(true)
-    expect(body.data.reason).toBe('not_last_day')
+    expect(body.data.reason).toBe('not_in_generation_window')
 
     vi.restoreAllMocks()
   })
@@ -346,5 +347,127 @@ describe('POST /api/reports/monthly (mock supabase)', () => {
     const body = await parseJson(res)
     expect(res.status).toBe(403)
     expect(body.error.code).toBe('FORBIDDEN')
+  })
+
+  // ── Chunk processing ──
+
+  it('chunk: processes only chunkSize students per invocation', async () => {
+    const { getSupabaseAdminClient } = await import('../../../src/shared/lib/supabaseAdmin')
+    const supabase = getSupabaseAdminClient()
+
+    // Seed 3 students with conversations
+    for (let i = 1; i <= 3; i++) {
+      await supabase.from('app_user').insert({
+        id: `chunk-student-${i}`,
+        auth_uid: `chunk-auth-${i}`,
+        email: `chunk${i}@example.com`,
+        display_name: `Chunk Student ${i}`,
+        role: 'student',
+      })
+      await supabase.from('conversations').insert({
+        id: `conv-chunk-${i}`,
+        user_id: `chunk-auth-${i}`,
+        title: `会話${i}`,
+        created_at: new Date(Date.UTC(2026, 3, 15)).toISOString(),
+      })
+      await supabase.from('messages').insert({
+        id: `msg-chunk-${i}`,
+        conversation_id: `conv-chunk-${i}`,
+        role: 'user' as const,
+        content: `質問${i}`,
+        created_at: new Date(Date.UTC(2026, 3, 15, 10, 0)).toISOString(),
+      })
+    }
+
+    // chunkSize=2: should process only 2 of 3 students
+    const { generateMonthlyReports } = await import('../../../src/shared/lib/monthlyReport')
+    const result = await generateMonthlyReports({ month: '2026-04', chunkSize: 2 })
+
+    expect(result.results.total).toBe(3)
+    expect(result.results.pending).toBe(3)
+    expect(result.results.processed).toBe(2)
+    expect(result.results.generated).toBe(2)
+    expect(result.results.remaining).toBe(1)
+    expect(result.notificationSent).toBe(false) // remaining > 0
+  })
+
+  it('chunk: skips already-generated students', async () => {
+    const { getSupabaseAdminClient } = await import('../../../src/shared/lib/supabaseAdmin')
+    const supabase = getSupabaseAdminClient()
+
+    // Seed student with a 'generated' report
+    await supabase.from('app_user').insert({
+      id: 'gen-student-1',
+      auth_uid: 'gen-auth-1',
+      email: 'gen1@example.com',
+      display_name: 'Gen Student 1',
+      role: 'student',
+    })
+    await supabase.from('conversations').insert({
+      id: 'conv-gen-1',
+      user_id: 'gen-auth-1',
+      title: '既存会話',
+      created_at: new Date(Date.UTC(2026, 4, 10)).toISOString(),
+    })
+    await supabase.from('messages').insert({
+      id: 'msg-gen-1',
+      conversation_id: 'conv-gen-1',
+      role: 'user' as const,
+      content: '質問です',
+      created_at: new Date(Date.UTC(2026, 4, 10, 10, 0)).toISOString(),
+    })
+    // Mark as already generated
+    await supabase.from('monthly_report').insert({
+      user_id: 'gen-student-1',
+      month: '2026-05',
+      status: 'generated' as const,
+      content: '既存レポート',
+    })
+
+    const { generateMonthlyReports } = await import('../../../src/shared/lib/monthlyReport')
+    const result = await generateMonthlyReports({ month: '2026-05' })
+
+    expect(result.results.total).toBe(1)
+    expect(result.results.pending).toBe(0)
+    expect(result.results.processed).toBe(0)
+    expect(result.results.remaining).toBe(0)
+    expect(result.results.generated).toBe(0)
+  })
+
+  it('chunk: notification skipped when remaining > 0', async () => {
+    const { getSupabaseAdminClient } = await import('../../../src/shared/lib/supabaseAdmin')
+    const supabase = getSupabaseAdminClient()
+
+    // Seed 2 students
+    for (let i = 1; i <= 2; i++) {
+      await supabase.from('app_user').insert({
+        id: `notif-student-${i}`,
+        auth_uid: `notif-auth-${i}`,
+        email: `notif${i}@example.com`,
+        display_name: `Notif Student ${i}`,
+        role: 'student',
+      })
+      await supabase.from('conversations').insert({
+        id: `conv-notif-${i}`,
+        user_id: `notif-auth-${i}`,
+        title: `通知テスト${i}`,
+        created_at: new Date(Date.UTC(2026, 5, 15)).toISOString(),
+      })
+      await supabase.from('messages').insert({
+        id: `msg-notif-${i}`,
+        conversation_id: `conv-notif-${i}`,
+        role: 'user' as const,
+        content: `質問${i}`,
+        created_at: new Date(Date.UTC(2026, 5, 15, 10, 0)).toISOString(),
+      })
+    }
+
+    // chunkSize=1 → remaining=1 → notification should be skipped
+    const { generateMonthlyReports } = await import('../../../src/shared/lib/monthlyReport')
+    const result = await generateMonthlyReports({ month: '2026-06', chunkSize: 1 })
+
+    expect(result.results.total).toBe(2)
+    expect(result.results.remaining).toBe(1)
+    expect(result.notificationSent).toBe(false)
   })
 })
