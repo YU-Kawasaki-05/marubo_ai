@@ -1,9 +1,12 @@
 /** @file
  * 月次レポート生成ドメインサービス。
- * 入力: 対象月 (YYYY-MM)、オプション (userId, dryRun)。
- * 出力: 生成結果サマリー { total, generated, failed, skipped }。
+ * 入力: 対象月 (YYYY-MM)、オプション (userId, dryRun, chunkSize)。
+ * 出力: 生成結果サマリー { total, pending, processed, generated, failed, skipped, remaining }。
  * 依存: Supabase Service Role、OpenAI (ai SDK)、Resend (fetch)。
  * セキュリティ: Cron 認証 or requireStaff() で認可済みの呼び出しのみ想定。
+ * 備考: チャンク分割処理（REPORT_CHUNK_SIZE、デフォルト3）で Vercel タイムアウトを回避。
+ *   生徒間に REPORT_DELAY_MS（デフォルト5000ms）のディレイで OpenAI レートリミットを回避。
+ *   status='generated' の生徒は自動スキップ（リジューム対応）。
  */
 
 import { openai } from '@ai-sdk/openai'
@@ -29,6 +32,7 @@ export type GenerateReportPayload = {
   month: string
   userId?: string
   dryRun?: boolean
+  chunkSize?: number
 }
 
 type StudentStats = {
@@ -43,9 +47,12 @@ type GenerationResult = {
   dryRun: boolean
   results: {
     total: number
+    pending: number
+    processed: number
     generated: number
     failed: number
     skipped: number
+    remaining: number
   }
   notificationSent: boolean
 }
@@ -82,6 +89,8 @@ const NO_DATA_CONTENT = `## 今月の学習サマリー
 
 const MAX_MESSAGES_FOR_LLM = 200
 const DEFAULT_MAX_TOKENS_OUT = 2000
+const DEFAULT_CHUNK_SIZE = 3
+const DEFAULT_DELAY_MS = 5000
 
 // ── ヘルパー ──
 
@@ -99,6 +108,15 @@ export function isLastDayOfMonth(): boolean {
   const tomorrow = new Date(jst)
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 1)
   return tomorrow.getUTCDate() === 1
+}
+
+/** 月末7日前〜月末の期間内かどうかを判定（チャンク分割 Cron 用） */
+export function isReportGenerationWindow(): boolean {
+  const now = new Date()
+  const jst = new Date(now.getTime() + 9 * 60 * 60 * 1000)
+  const lastDay = new Date(Date.UTC(jst.getUTCFullYear(), jst.getUTCMonth() + 1, 0)).getUTCDate()
+  const currentDay = jst.getUTCDate()
+  return currentDay >= lastDay - 6
 }
 
 export function getCurrentMonth(): string {
@@ -303,7 +321,10 @@ ${failedNote}
 export async function generateMonthlyReports(
   payload: GenerateReportPayload,
 ): Promise<GenerationResult> {
-  const { month, userId, dryRun = false } = payload
+  const { month, userId, dryRun = false, chunkSize: chunkSizeOverride } = payload
+  const chunkSize = chunkSizeOverride ?? (Number(process.env.REPORT_CHUNK_SIZE) || DEFAULT_CHUNK_SIZE)
+  const envDelay = process.env.REPORT_DELAY_MS
+  const delayMs = envDelay !== undefined ? Number(envDelay) : DEFAULT_DELAY_MS
 
   if (!month || !/^\d{4}-\d{2}$/.test(month)) {
     throw new AppError(400, 'INVALID_MONTH', 'month は YYYY-MM 形式で指定してください。')
@@ -334,7 +355,7 @@ export async function generateMonthlyReports(
       return {
         month,
         dryRun,
-        results: { total: 0, generated: 0, failed: 0, skipped: 0 },
+        results: { total: 0, pending: 0, processed: 0, generated: 0, failed: 0, skipped: 0, remaining: 0 },
         notificationSent: false,
       }
     }
@@ -351,7 +372,7 @@ export async function generateMonthlyReports(
     return {
       month,
       dryRun,
-      results: { total: 0, generated: 0, failed: 0, skipped: 0 },
+      results: { total: 0, pending: 0, processed: 0, generated: 0, failed: 0, skipped: 0, remaining: 0 },
       notificationSent: false,
     }
   }
@@ -367,16 +388,43 @@ export async function generateMonthlyReports(
     userMap.set(u.id, { id: u.id, authUid: u.auth_uid })
   }
 
+  // Step 2b: 生成済み (generated) の生徒を除外してチャンク制限
+  // userId 指定時（個別再生成）はスキップしない
+  let pendingIds: string[]
+  if (userId) {
+    pendingIds = targetUserIds
+  } else {
+    const { data: existingReports } = await supabase
+      .from('monthly_report')
+      .select('user_id, status')
+      .eq('month', month)
+      .in('user_id', targetUserIds)
+    const generatedIds = new Set(
+      (existingReports ?? [])
+        .filter((r: { status: string }) => r.status === 'generated')
+        .map((r: { user_id: string }) => r.user_id),
+    )
+    pendingIds = targetUserIds.filter((id) => !generatedIds.has(id))
+  }
+
+  const chunk = pendingIds.slice(0, chunkSize)
+
   let generated = 0
   let failed = 0
   let skipped = 0
 
-  // Step 3: process each student sequentially
-  for (const appUserId of targetUserIds) {
+  // Step 3: process chunk sequentially with delay
+  for (let i = 0; i < chunk.length; i++) {
+    const appUserId = chunk[i]
     const userInfo = userMap.get(appUserId)
     if (!userInfo) {
       skipped++
       continue
+    }
+
+    // 2人目以降はディレイ（OpenAI レートリミット回避）
+    if (i > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
     }
 
     try {
@@ -454,9 +502,11 @@ export async function generateMonthlyReports(
     }
   }
 
-  // Step 4: send notification (skip for dryRun)
+  const remaining = pendingIds.length - chunk.length
+
+  // Step 4: send notification only when all students are done (skip for dryRun)
   let notificationSent = false
-  if (!dryRun && targetUserIds.length > 0) {
+  if (!dryRun && targetUserIds.length > 0 && remaining === 0) {
     notificationSent = await sendNotificationEmail(month, targetUserIds.length, generated, failed)
   }
 
@@ -465,9 +515,12 @@ export async function generateMonthlyReports(
     dryRun,
     results: {
       total: targetUserIds.length,
+      pending: pendingIds.length,
+      processed: chunk.length,
       generated,
       failed,
       skipped,
+      remaining,
     },
     notificationSent,
   }

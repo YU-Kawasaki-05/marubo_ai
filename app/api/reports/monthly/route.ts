@@ -12,7 +12,7 @@ import { AppError, errorResponse } from '../../../../src/shared/lib/errors'
 import {
   generateMonthlyReports,
   getCurrentMonth,
-  isLastDayOfMonth,
+  isReportGenerationWindow,
   verifyCronAuth,
   type GenerateReportPayload,
 } from '../../../../src/shared/lib/monthlyReport'
@@ -32,8 +32,8 @@ export async function GET(request: Request) {
   if (verifyCronAuth(request)) {
     const requestId = generateRequestId('monthly_report')
     try {
-      if (!isLastDayOfMonth()) {
-        return jsonResponse(requestId, { skipped: true, reason: 'not_last_day' })
+      if (!isReportGenerationWindow()) {
+        return jsonResponse(requestId, { skipped: true, reason: 'not_in_generation_window' })
       }
       const month = getCurrentMonth()
       const result = await generateMonthlyReports({ month })
@@ -97,9 +97,9 @@ export async function POST(request: Request) {
 
     let month: string
     if (isCron) {
-      // Cron: always current month, only on last day
-      if (!isLastDayOfMonth()) {
-        return jsonResponse(requestId, { skipped: true, reason: 'not_last_day' })
+      // Cron: always current month, only in generation window (last 7 days of month)
+      if (!isReportGenerationWindow()) {
+        return jsonResponse(requestId, { skipped: true, reason: 'not_in_generation_window' })
       }
       month = getCurrentMonth()
     } else {
