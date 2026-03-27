@@ -105,6 +105,7 @@
 | GFX-38 | (新規) | Google OAuth ログインの導入 | 実装済み |
 | GFX-39 | (新規) | CSV インポートのファイル選択キャンセル機能 | 実装済み (PR #83) |
 | GFX-40 | (新規) | ロール別ナビゲーション（スタッフに管理画面リンク） | 実装済み (PR #84) |
+| GFX-41 | (新規) | 月次レポート生成チャンク分割 + LLM モデル環境変数化 | Sprint 7 |
 
 ---
 
@@ -3896,6 +3897,270 @@ Acceptance Criteria (Done)
 
 ---
 
+## GFX-41: 月次レポート生成のチャンク分割 + LLM モデル環境変数化
+
+```text
+[Task Title]
+月次レポート生成をチャンク分割して Vercel タイムアウトと
+OpenAI レートリミットに対応する。併せてチャット用 LLM モデルを環境変数化する。
+
+Goal
+- 月次レポート生成を N 人ずつのチャンクに分割し、
+  Vercel Function のタイムアウト（Pro: 60秒）内で確実に完了させる。
+- OpenAI レートリミットを回避するため、生徒間にディレイを挿入する。
+- チャット用モデル名をハードコードから環境変数に移行し、
+  gpt-5.4-mini 等への切り替えを ENV 変更のみで行えるようにする。
+
+Background — なぜ必要か
+
+  ■ タイムアウト問題:
+    - 現在は全生徒を逐次処理（generateMonthlyReports 内の for ループ）
+    - gpt-4o-mini: 1人3〜5秒 → 20人で60〜100秒（Pro タイムアウト超過のリスク）
+    - gpt-5.4（レポート生成に採用予定）: 1人10〜20秒 → 20人で200〜400秒（確実に超過）
+    - Vercel Hobby: 10秒、Pro: 60秒（maxDuration で最大300秒に延長可能だが不安定）
+
+  ■ レートリミット問題:
+    - gpt-5.4 は大型モデルのため RPM/TPM 制限が gpt-4o-mini より厳しい
+    - 20人連続で LLM を呼ぶと、Tier 1-2 では RPM 上限に達する可能性がある
+    - ディレイなしの連続リクエストは OpenAI 側で 429 (Too Many Requests) になりうる
+
+  ■ モデルハードコード問題:
+    - チャット用モデルが app/api/chat/route.ts に 'gpt-4o-mini' としてハードコード（L206, L276）
+    - レポート用モデルは REPORT_LLM_MODEL 環境変数で管理済み（ベストプラクティス）
+    - gpt-5.4-mini への切り替え時にコード変更 + デプロイが必要になってしまう
+    - 環境変数化すれば Vercel Dashboard で即座に切り替え可能
+
+Context — 現在の実装
+
+  ■ レポート生成:
+    ファイル: src/shared/lib/monthlyReport.ts
+
+    L205: const modelName = process.env.REPORT_LLM_MODEL ?? 'gpt-4o-mini'
+      → 環境変数で管理済み（OK）
+
+    L374-455: for (const appUserId of targetUserIds) { ... }
+      → 全生徒を逐次処理。チャンク分割なし。ディレイなし。
+
+  ■ チャット:
+    ファイル: app/api/chat/route.ts
+
+    L206: model: openai('gpt-4o-mini'),  // チャット応答
+    L276: model: openai('gpt-4o-mini'),  // タイトル生成
+      → ハードコード
+
+  ■ Cron:
+    ファイル: vercel.json
+
+    schedule: "55 14 * * *"  // 毎日 23:55 JST
+    → isLastDayOfMonth() で月末のみ実行
+    → チャンク分割後は「月末7日前から毎日実行」に変更が必要
+
+  ■ DB ステータス管理（既存・活用可能）:
+    monthly_report.status: 'pending' | 'generating' | 'generated' | 'failed'
+    → 'generated' でない生徒だけを対象にすれば、チャンク分割で自然にリジューム可能
+
+モデル移行計画
+
+  | 用途 | 現在 | 移行後 | 管理方法 |
+  |------|------|--------|----------|
+  | チャット応答 | gpt-4o-mini (ハードコード) | gpt-5.4-mini | CHAT_LLM_MODEL 環境変数 |
+  | タイトル生成 | gpt-4o-mini (ハードコード) | gpt-5.4-mini | CHAT_LLM_MODEL と共用 |
+  | レポート生成 | gpt-4o-mini (環境変数) | gpt-5.4 | REPORT_LLM_MODEL 環境変数（既存） |
+
+  コスト試算（20人/月、レポート生成のみ）:
+    gpt-4o-mini: ~$0.04/月
+    gpt-5.4（推定）: ~$0.30〜$0.60/月（テスト・リトライ含めて $2〜5/月）
+    → β版20人なら十分許容範囲
+
+Scope
+- 変更OK:
+  - src/shared/lib/monthlyReport.ts（チャンク分割 + ディレイ挿入）
+  - app/api/reports/monthly/route.ts（チャンクサイズパラメータ対応）
+  - app/api/chat/route.ts（モデル名を環境変数化）
+  - vercel.json（Cron スケジュールを月末7日前から毎日に変更）
+  - .env.example（CHAT_LLM_MODEL 追加）
+  - CLAUDE.md（モデル管理方法の更新）
+  - docs/reports/monthly.md（チャンク分割の仕様追記）
+- 変更NG:
+  - src/shared/lib/reportRead.ts（レポート読み取りは変更不要）
+  - DB スキーマ（既存の status カラムで対応可能）
+
+Implementation — Step-by-Step
+
+Step 1: チャット用モデルを環境変数化する
+  ファイル: app/api/chat/route.ts
+
+  1a. ファイル冒頭付近にモデル名取得を追加:
+    const CHAT_MODEL = process.env.CHAT_LLM_MODEL ?? 'gpt-4o-mini'
+
+  1b. ハードコードを置換（2箇所）:
+    L206: model: openai(CHAT_MODEL),
+    L276: model: openai(CHAT_MODEL),
+
+  1c. @file コメントを更新（モデル名の説明を環境変数参照に変更）
+
+Step 2: 月次レポート生成にチャンク分割を導入する
+  ファイル: src/shared/lib/monthlyReport.ts
+
+  2a. チャンクサイズの定数を追加:
+    const REPORT_CHUNK_SIZE = Number(process.env.REPORT_CHUNK_SIZE) || 3
+
+  2b. generateMonthlyReports の引数にオプションを追加:
+    interface GenerateOptions {
+      month: string
+      supabase: SupabaseClient
+      userId?: string        // 既存: 単一生徒の再生成
+      dryRun?: boolean       // 既存: テスト実行
+      chunkSize?: number     // 新規: チャンクサイズ上書き
+    }
+
+  2c. for ループの前にチャンク制限を追加:
+    // 未生成の生徒だけを対象にする（generated は除外）
+    const pendingUserIds = targetUserIds.filter(async (id) => {
+      const { data } = await supabase
+        .from('monthly_report')
+        .select('status')
+        .eq('user_id', id)
+        .eq('month', month)
+        .single()
+      return !data || data.status !== 'generated'
+    })
+
+    // チャンクサイズで制限
+    const chunk = pendingUserIds.slice(0, chunkSize ?? REPORT_CHUNK_SIZE)
+
+    注意: filter 内で async を使う場合は Promise.all + filter パターンが必要。
+    あるいはループ前に一括で status を取得する方が効率的:
+      const { data: existingReports } = await supabase
+        .from('monthly_report')
+        .select('user_id, status')
+        .eq('month', month)
+        .in('user_id', targetUserIds)
+      const generatedIds = new Set(
+        existingReports?.filter(r => r.status === 'generated').map(r => r.user_id) ?? []
+      )
+      const pendingIds = targetUserIds.filter(id => !generatedIds.has(id))
+      const chunk = pendingIds.slice(0, chunkSize ?? REPORT_CHUNK_SIZE)
+
+  2d. 生徒間にディレイを挿入:
+    for (let i = 0; i < chunk.length; i++) {
+      const appUserId = chunk[i]
+
+      // 2人目以降はディレイ（レートリミット回避）
+      if (i > 0) {
+        await new Promise(resolve => setTimeout(resolve, 5000))
+      }
+
+      // 既存の生成ロジック
+      try { ... } catch { ... }
+    }
+
+  2e. レスポンスにチャンク情報を追加:
+    return {
+      month,
+      dryRun,
+      results: {
+        total: targetUserIds.length,    // 全生徒数
+        pending: pendingIds.length,     // 未生成の生徒数
+        processed: chunk.length,        // 今回処理した生徒数
+        generated,                      // 今回成功した数
+        failed,                         // 今回失敗した数
+        remaining: pendingIds.length - chunk.length,  // 残りの生徒数
+      },
+      notificationSent,
+    }
+
+Step 3: Cron スケジュールを変更する
+  ファイル: vercel.json
+
+  変更前: "schedule": "55 14 * * *"  // 毎日23:55 JST → isLastDayOfMonth() で制御
+  変更後: "schedule": "55 14 * * *"  // 変更なし（スケジュール自体は同じ）
+
+  ファイル: src/shared/lib/monthlyReport.ts
+
+  isLastDayOfMonth() の条件を緩和:
+    変更前: 月末の1日だけ実行
+    変更後: 月末7日前〜月末まで実行（= 毎月25日〜月末）
+
+    const isReportGenerationWindow = (): boolean => {
+      const now = new Date()
+      const jst = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Tokyo' }))
+      const lastDay = new Date(jst.getFullYear(), jst.getMonth() + 1, 0).getDate()
+      const currentDay = jst.getDate()
+      return currentDay >= lastDay - 6  // 月末7日前から
+    }
+
+  注意:
+    - 既に 'generated' の生徒はスキップするため、複数日実行しても二重生成されない
+    - 25日〜月末の7日間で 20人 ÷ 3人/回 ≒ 7回 → 余裕を持って全員完了
+    - 通知メールは remaining === 0 のときだけ送信する（途中経過では送らない）
+
+Step 4: .env.example と CLAUDE.md を更新する
+  ファイル: .env.example
+
+  追加:
+    # LLM モデル設定
+    CHAT_LLM_MODEL=gpt-4o-mini          # チャット応答 + タイトル生成
+    REPORT_LLM_MODEL=gpt-4o-mini        # 月次レポート生成（既存）
+    REPORT_CHUNK_SIZE=3                  # レポート生成の1回あたりの処理人数
+
+  ファイル: CLAUDE.md
+
+  プロジェクト概要のモデル情報を更新:
+    変更前: AI モデル: gpt-4o-mini（コスト重視）
+    変更後: AI モデル: CHAT_LLM_MODEL（デフォルト gpt-4o-mini）、
+            レポート: REPORT_LLM_MODEL（デフォルト gpt-4o-mini）
+
+  ファイル: docs/reports/monthly.md
+
+  チャンク分割仕様を追記:
+    - REPORT_CHUNK_SIZE（デフォルト3）人ずつ処理
+    - 月末7日前から毎日 Cron が実行され、未生成の生徒を順次処理
+    - 生徒間に5秒のディレイ（レートリミット回避）
+    - 全員完了時に管理者へ通知メール
+
+Step 5: テストを更新する
+  ファイル: tests/api/reports/monthly.test.ts
+
+  追加テストケース:
+  - チャンクサイズを超える生徒がいる場合、chunk 分だけ処理される
+  - 'generated' ステータスの生徒はスキップされる
+  - remaining が正しく計算される
+  - 全員完了時に通知メールが送信される
+  - 途中（remaining > 0）では通知メールが送信されない
+
+Risks / Follow-ups
+- Vercel Pro プランの maxDuration:
+  3人 × (20秒 + 5秒ディレイ) = 75秒。Pro のデフォルト60秒を超える可能性。
+  vercel.json で maxDuration: 120 を設定するか、チャンクサイズを2に下げるか検討。
+  → まず REPORT_CHUNK_SIZE=3 で試し、タイムアウトしたら2に調整（ENV 変更のみ）。
+- gpt-5.4 の実際のレスポンス時間:
+  モデルリリース後に実測が必要。予想より速ければチャンクサイズを上げられる。
+- Cron の信頼性:
+  Vercel Cron は「ベストエフォート」で、稀に実行されないことがある。
+  月末の7日間毎日実行することで、1〜2回スキップされても全員完了する冗長性を確保。
+- タイトル生成のモデル:
+  タイトル生成は短いテキスト出力のため、チャットと同じモデルで十分。
+  コスト最適化のために別モデル（gpt-4o-mini 固定）にすることも可能だが、
+  β版では管理コスト削減のため CHAT_LLM_MODEL に統一する。
+
+Acceptance Criteria (Done)
+- [ ] CHAT_LLM_MODEL 環境変数でチャット用モデルを切り替えられる
+- [ ] app/api/chat/route.ts に gpt-4o-mini のハードコードがない
+- [ ] REPORT_CHUNK_SIZE 環境変数でチャンクサイズを制御できる
+- [ ] 月次レポート生成が CHUNK_SIZE 人ずつ処理される
+- [ ] 'generated' ステータスの生徒がスキップされる
+- [ ] 生徒間に5秒のディレイが挿入される
+- [ ] 全員完了時のみ通知メールが送信される
+- [ ] .env.example に CHAT_LLM_MODEL, REPORT_CHUNK_SIZE が追記されている
+- [ ] CLAUDE.md のモデル情報が更新されている
+- [ ] docs/reports/monthly.md にチャンク分割仕様が追記されている
+- [ ] 既存テストが通る + チャンク分割のテストが追加されている
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
 ## 4. 実装ロードマップサマリー
 
 ```
@@ -3946,6 +4211,11 @@ Sprint 6: GFX-36, GFX-37, GFX-39, GFX-40 ✅ すべて実装済み
 
 Critical (β版リリース前): GFX-38 ✅ 実装済み
   → Google OAuth ログインの導入（Google でログインボタン追加）
+
+Sprint 7: GFX-41
+  → 月次レポート生成のチャンク分割（3人/回 × 月末7日間）
+  → チャット用 LLM モデルの環境変数化（CHAT_LLM_MODEL）
+  → gpt-5.4 / gpt-5.4-mini への移行準備
 
 Backlog: GFX-19, GFX-20, GFX-21, GFX-22, GFX-23, GFX-24, GFX-25, GFX-26
   → 優先度に応じて順次対応
