@@ -209,9 +209,19 @@ export function CsvImportForm({ onImport }: { onImport: (csv: string, mode: 'ins
                 <tbody className="divide-y divide-slate-200 bg-white">
                   {preview.rows.slice(0, 5).map((row, i) => (
                     <tr key={i}>
-                      {row.map((cell, j) => (
-                        <td key={j} className="px-4 py-2 text-slate-600">{cell}</td>
-                      ))}
+                      {row.map((cell, j) => {
+                        const isRoleCol = preview.header[j]?.trim().toLowerCase() === 'initial_role'
+                        const isStaff = isRoleCol && cell.trim().toLowerCase() === 'staff'
+                        return (
+                          <td key={j} className="px-4 py-2 text-slate-600">
+                            {isStaff ? (
+                              <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700">
+                                staff
+                              </span>
+                            ) : cell}
+                          </td>
+                        )
+                      })}
                     </tr>
                   ))}
                 </tbody>

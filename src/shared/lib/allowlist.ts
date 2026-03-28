@@ -259,14 +259,17 @@ export async function importAllowlistCsv(
 ) {
   const supabase = getSupabaseAdminClient()
   const emails = records.map((record) => record.email)
+  const now = new Date().toISOString()
   const payloads = records.map((record) => ({
     email: record.email,
     status: record.status ?? 'pending',
     label: record.label ?? null,
     notes: record.notes ?? null,
-    initial_role: record.initial_role ?? 'student',
+    // initial_role が CSV に明示されている場合のみ設定。
+    // 未指定時は insert では DB デフォルト 'student'、upsert では既存値を保持。
+    ...(record.initial_role ? { initial_role: record.initial_role } : {}),
     created_by: options.staffUserId,
-    updated_at: new Date().toISOString(),
+    updated_at: now,
   }))
 
   if (options.mode === 'insert') {
