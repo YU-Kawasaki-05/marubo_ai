@@ -106,7 +106,14 @@
 | GFX-39 | (新規) | CSV インポートのファイル選択キャンセル機能 | 実装済み (PR #83) |
 | GFX-40 | (新規) | ロール別ナビゲーション（スタッフに管理画面リンク） | 実装済み (PR #84) |
 | GFX-41 | (新規) | 月次レポート生成チャンク分割 + LLM モデル環境変数化 | 実装済み |
-| GFX-42 | (新規) | allowlist に initial_role 追加（スタッフ事前予約） | Critical (β版リリース前) |
+| GFX-42 | (新規) | allowlist に initial_role 追加（スタッフ事前予約） | 実装済み |
+| GFX-43 | (新規) | allowlist UI で initial_role 編集可能化 | Critical |
+| GFX-44 | (新規) | CSV インポート initial_role 対応強化 | Sprint 8 |
+| GFX-45 | (新規) | grant ページ UX 改善・ロール管理ワークフロー案内 | Sprint 8 |
+| GFX-46 | (新規) | モバイルヘッダー最適化・入力エリア改善 | Sprint 9 (デザイン) |
+| GFX-47 | (新規) | メッセージ可読性向上・応答待ち体験改善 | Sprint 9 (デザイン) |
+| GFX-48 | (新規) | ウェルカム画面・質問サジェスト表示 | Sprint 9 (デザイン) |
+| GFX-49 | (新規) | チャット画面の配色・トーン改善 | Sprint 9 (デザイン) |
 
 ---
 
@@ -4420,6 +4427,586 @@ Validation commands:
 
 ---
 
+## GFX-43: allowlist UI で既存エントリの initial_role を編集可能にする
+
+```text
+[Task Title]
+許可メール一覧で既存エントリの initial_role（生徒/スタッフ）を変更できるようにする
+
+Goal
+- 一度 student で登録したエントリを、UI 上から staff に変更できるようにする。
+- initial_role の意味と制約（初回ログイン時のみ有効）を UI 上で明示する。
+
+Background — なぜ必要か
+- GFX-42 で initial_role を導入したが、既存エントリの変更 UI を実装していなかった。
+- スタッフが誤って student で登録した場合、UI からリカバリする手段がない。
+- バックエンドの PATCH エンドポイントは initial_role の更新に対応済みだが、
+  フロントエンドのフック（useAllowlistMutations.ts）が initial_role を送信していない。
+
+Scope
+- 変更OK:
+  - src/features/admin/allowlist/hooks/useAllowlistMutations.ts
+    — updateAllowedEmail に initial_role パラメータ追加
+  - app/admin/allowlist/page.tsx
+    — 一覧の各行に initial_role の編集 UI（ドロップダウン or トグル）追加
+    — 個別登録フォームに「初回ログイン時のみ有効」の注意書き追加
+    — 型キャスト workaround (item as { initial_role?: string }) を正しい型に修正
+  - src/shared/types/database.ts — 必要に応じて型修正
+
+Implementation — Step-by-Step
+
+Step 1: useAllowlistMutations の updateAllowedEmail を修正
+  ファイル: src/features/admin/allowlist/hooks/useAllowlistMutations.ts
+
+  変更前:
+    async function updateAllowedEmail(email: string, input: {
+      status?: AllowedEmailStatus; label?: string | null; notes?: string | null
+    })
+
+  変更後:
+    async function updateAllowedEmail(email: string, input: {
+      status?: AllowedEmailStatus; label?: string | null;
+      notes?: string | null; initial_role?: 'student' | 'staff'
+    })
+
+Step 2: 一覧の各行に initial_role 編集 UI を追加
+  ファイル: app/admin/allowlist/page.tsx
+
+  既存のステータスドロップダウンの近くに、initial_role のドロップダウンを追加:
+    <select
+      value={item.initial_role || 'student'}
+      onChange={(e) => updateAllowedEmail(item.email, {
+        initial_role: e.target.value as 'student' | 'staff'
+      })}
+    >
+      <option value="student">生徒</option>
+      <option value="staff">スタッフ</option>
+    </select>
+
+  注意: ログイン済みユーザーの場合は「※ 既にログイン済みの場合は grant ページで変更」
+  のツールチップを表示する。
+
+Step 3: 個別登録フォームに注意書きを追加
+  ロール選択の下に:
+    <p className="text-xs text-slate-400 mt-1">
+      ※ 初回ログイン時に適用されます。ログイン後の変更は権限管理ページで行えます。
+    </p>
+
+Step 4: 型キャスト workaround を修正
+  (item as { initial_role?: string }).initial_role を
+  item.initial_role に変更（型定義が正しければキャスト不要）
+
+Acceptance Criteria (Done)
+- [ ] 一覧の各行で initial_role を生徒/スタッフに変更できる
+- [ ] 変更が即座に反映される（インライン更新）
+- [ ] 個別登録フォームに「初回ログイン時のみ有効」の注意書きがある
+- [ ] 型キャストの workaround が解消されている
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
+## GFX-44: CSV インポートの initial_role 対応強化とドキュメント更新
+
+```text
+[Task Title]
+CSV インポートで initial_role カラムを正式サポートし、
+マニュアルとバリデーションを整備する
+
+Goal
+- CSV インポートで initial_role カラムが使えることをドキュメント化する。
+- CSV upsert 時に initial_role 未指定の場合、既存値を上書きしないようにする。
+
+Background — なぜ必要か
+- CSV パーサーは initial_role をサポート済みだが、マニュアルに記載がない。
+- CSV upsert で initial_role が未指定の場合、デフォルト 'student' で上書きされる。
+  grant で staff にしたユーザーが CSV 再インポートで allowlist 上は student に
+  戻ってしまい、一覧表示と実際の権限が乖離する。
+
+Scope
+- 変更OK:
+  - memo/Manual_InfoDoc/csv_import.md — initial_role カラムのドキュメント追加
+  - src/shared/lib/allowlist.ts — upsert 時の initial_role デフォルト処理を改善
+  - src/features/admin/allowlist/components/CsvImportForm.tsx
+    — プレビュー表示に initial_role を含める
+
+Implementation — Step-by-Step
+
+Step 1: CSV マニュアルを更新する
+  ファイル: memo/Manual_InfoDoc/csv_import.md
+
+  カラム一覧に追加:
+    | initial_role | - | 初回ログイン時のロール（student/staff）。省略時は student |
+
+  サンプル CSV に initial_role の例を追加。
+
+Step 2: upsert 時の initial_role デフォルト処理を改善する
+  ファイル: src/shared/lib/allowlist.ts
+
+  変更前:
+    initial_role: record.initial_role ?? 'student'
+
+  変更後:
+    ...(record.initial_role ? { initial_role: record.initial_role } : {})
+
+  → initial_role が CSV に含まれていない場合は upsert payload から除外し、
+    既存値を保持する。新規 INSERT 時は DB デフォルト 'student' が適用される。
+
+Step 3: プレビュー表示に initial_role を含める
+  CSV 読み込み後のプレビューテーブルに initial_role 列を表示。
+  'staff' の場合は紫バッジで強調。
+
+Acceptance Criteria (Done)
+- [ ] CSV マニュアルに initial_role の説明が追加されている
+- [ ] initial_role カラムを含む CSV でインポートすると正しく反映される
+- [ ] initial_role カラムを含まない CSV で upsert しても既存の initial_role が上書きされない
+- [ ] プレビューに initial_role が表示される
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
+## GFX-45: grant ページの UX 改善とロール管理ワークフローの案内整備
+
+```text
+[Task Title]
+grant ページに新規ユーザー向け案内を追加し、
+ロール管理のワークフローをドキュメント化する
+
+Goal
+- grant ページで「ユーザーが見つかりません」エラーが出た際の対処法を案内する。
+- initial_role と grant の使い分けを明確にドキュメント化する。
+
+Background — なぜ必要か
+- β版デプロイ時に、まだログインしていないユーザーに grant しようとして
+  「対象のユーザーが見つかりません」エラーが発生し、混乱が生じた。
+- initial_role（ログイン前のロール予約）と grant（ログイン後のロール変更）の
+  使い分けが UI 上で案内されていない。
+
+Scope
+- 変更OK:
+  - app/admin/grant/page.tsx — 説明テキスト・エラー時の案内追加
+  - docs/operational/runbook.md or CLAUDE.md — ロール管理ワークフロー追記
+
+Implementation — Step-by-Step
+
+Step 1: grant ページに案内を追加する
+  ファイル: app/admin/grant/page.tsx
+
+  既存の説明テキストの下に追加:
+    <div className="rounded-md bg-blue-50 p-3 text-sm text-blue-700">
+      <p className="font-medium">ロール管理について</p>
+      <ul className="mt-1 list-disc pl-4 space-y-1">
+        <li>
+          <strong>新規ユーザー</strong>: 許可メール一覧で「スタッフ」ロールを
+          指定して登録してください。初回ログイン時に反映されます。
+        </li>
+        <li>
+          <strong>既存ユーザー</strong>: このページで権限を変更できます。
+          対象ユーザーが一度ログイン済みである必要があります。
+        </li>
+      </ul>
+    </div>
+
+Step 2: USER_NOT_FOUND エラー時の具体的な案内
+  エラーメッセージ「対象のユーザーが見つかりません」の表示時に、
+  追加で以下を表示:
+    「このユーザーはまだログインしていません。
+     許可メール一覧で initial_role を "スタッフ" に設定してから、
+     ログインを案内してください。」
+
+Step 3: ロール管理ワークフローをドキュメント化
+  CLAUDE.md または docs/ に追記:
+
+  ■ スタッフを追加する手順:
+    A. 新規ユーザー（まだログインしていない）:
+      1. /admin/allowlist で「スタッフ」ロールで登録
+      2. ユーザーに Google ログインを案内
+      3. → 自動的に staff として /admin にリダイレクト
+
+    B. 既存ユーザー（既にログイン済み）:
+      1. /admin/grant でメールアドレスを入力
+      2. 「権限付与」を実行
+      3. ユーザーに再ログインを案内
+
+Acceptance Criteria (Done)
+- [ ] grant ページに新規/既存ユーザーの使い分け案内が表示される
+- [ ] USER_NOT_FOUND エラー時に具体的な対処法が表示される
+- [ ] ロール管理ワークフローがドキュメント化されている
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
+## GFX-46: チャット画面のモバイルヘッダー最適化と入力エリア改善
+
+```text
+[Task Title]
+中学生スマホユーザー向けに、チャット画面のヘッダーを軽量化し、
+入力エリアのタッチ操作性を向上させる
+
+Goal
+- ヘッダーの情報量を減らし、スマホで圧迫感のないシンプルな表示にする。
+- 入力欄と送信ボタンを親指で操作しやすいサイズ・位置にする。
+- 既存機能（レポートリンク、ログアウト、管理画面リンク等）を損なわない。
+
+Background — ペルソナと課題
+- 対象: 塾に通う中学生（13〜15歳）、iPhone/Android でアクセス
+- 片手持ち・親指操作が基本。LINE/Instagram の UX に慣れている。
+- 現状のヘッダーは「Marubo AI」「Beta」「UsageBadge」「レポート」
+  「管理画面」「ログアウト」「✕閉じる」が横一列に並び、
+  スマホ（特に iPhone SE, iPhone 14）で窮屈。
+- 入力欄のフォントが小さく、送信ボタンも小さい（44x44px 未満）。
+  Apple HIG が推奨する最小タップターゲットは 44x44px。
+
+制約
+- 既存機能を削除しない。ヘッダーの項目は非表示にしてもアクセス手段は残す。
+- デスクトップ表示は大幅に変えない（既存ユーザーの混乱を避ける）。
+- テスト（pnpm test）を壊さない。
+
+Scope
+- 変更OK:
+  - app/chat/page.tsx（ヘッダーレイアウト変更）
+  - src/features/chat/components/ChatInterface.tsx（入力エリア改善）
+  - app/globals.css（必要に応じてスタイル追加）
+- 変更NG:
+  - src/features/chat/components/MessageBubble.tsx（別 GFX で対応）
+  - src/features/chat/components/ConversationSidebar.tsx（別 GFX で対応）
+  - API / ロジック層（UI のみ変更）
+
+Implementation — Step-by-Step
+
+Step 1: モバイルヘッダーの軽量化
+  ファイル: app/chat/page.tsx
+
+  モバイル（md 未満）では以下のみ表示:
+    左: ハンバーガーメニュー（サイドバー開閉）
+    中央: 「Marubo AI」ロゴ（Beta バッジは非表示）
+    右: 残り回数バッジ（UsageBadge、コンパクト表示）
+
+  「レポート」「ログアウト」「管理画面」「✕閉じる」は:
+    → サイドバー内のメニューに移動（サイドバー下部にリンク一覧を配置）
+
+  デスクトップ（md 以上）は現状維持。
+
+Step 2: 入力エリアのタッチ最適化
+  ファイル: src/features/chat/components/ChatInterface.tsx
+
+  2a. textarea のフォントサイズを 16px に統一:
+    → iOS Safari は 16px 未満だと自動ズームする。
+    → className に text-base（16px）を明示。
+
+  2b. 送信ボタンを大きく:
+    変更前: px-6 py-2（約 80x36px）
+    変更後: px-6 py-3 min-h-[44px] min-w-[44px]（44px 以上を保証）
+    → Apple HIG 準拠の最小タップターゲット。
+
+  2c. 📎ボタンも 44x44px に:
+    変更前: p-3（約 40x40px）
+    変更後: p-3 min-h-[44px] min-w-[44px]
+
+  2d. 入力エリア全体の padding を広めに:
+    変更前: p-4 pt-2
+    変更後: p-3 pb-safe（safe-area-inset-bottom を考慮）
+    → iPhone のホームインジケータに被らないようにする。
+
+Step 3: Safe Area 対応
+  ファイル: app/globals.css または tailwind.config.ts
+
+  iOS Safari のノッチ / ホームバー領域を考慮:
+    env(safe-area-inset-bottom) を入力エリアの padding-bottom に適用。
+
+  Tailwind では:
+    pb-[calc(0.75rem+env(safe-area-inset-bottom))]
+
+  または globals.css に:
+    .pb-safe {
+      padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0.75rem));
+    }
+
+  app/layout.tsx の <html> に:
+    <meta name="viewport" content="..., viewport-fit=cover" />
+
+Acceptance Criteria (Done)
+- [ ] モバイルヘッダーにはロゴ・ハンバーガー・残り回数のみ表示される
+- [ ] 「レポート」「ログアウト」等はサイドバー内からアクセスできる
+- [ ] デスクトップのヘッダーは従来通り表示される
+- [ ] 送信ボタン・📎ボタンの最小サイズが 44x44px 以上
+- [ ] textarea が 16px フォントで iOS の自動ズームが発生しない
+- [ ] iPhone のホームバー領域に入力欄が被らない
+- [ ] 既存テストが通る（`pnpm lint` / `pnpm typecheck` / `pnpm test`）
+```
+
+---
+
+## GFX-47: メッセージバブルの可読性向上と AI 応答のストリーミング体験改善
+
+```text
+[Task Title]
+AI の回答を読みやすくし、応答待ちの体験を改善する
+
+Goal
+- AI の長文回答を中学生が読みやすいフォントサイズ・行間・余白にする。
+- AI が応答中であることが直感的にわかるインジケータを表示する。
+- Markdown（見出し、箇条書き、数式）の表示を整える。
+
+Background — ペルソナと課題
+- 中学生は長文を読むのが苦手。行間が詰まっていると離脱する。
+- 現状の AI バブル: bg-white + shadow-sm + 小さめのフォント → 教科書っぽく読みにくい。
+- 応答待ち中のインジケータが地味で、AI が考え中なのかフリーズしたのかわからない。
+- LINE のような「...」バブルアニメーションが中学生には馴染みがある。
+
+制約
+- 既存のメッセージ構造（role、content、attachments）を変えない。
+- MessageBubble の props インターフェースを変えない（互換性維持）。
+
+Scope
+- 変更OK:
+  - src/features/chat/components/MessageBubble.tsx（スタイル変更）
+  - app/globals.css（Markdown スタイル、アニメーション追加）
+- 変更NG:
+  - src/features/chat/components/ChatInterface.tsx（入力エリアは GFX-46）
+  - API / ストリーミングロジック
+
+Implementation — Step-by-Step
+
+Step 1: AI メッセージバブルの可読性向上
+  ファイル: src/features/chat/components/MessageBubble.tsx
+
+  1a. AI バブルのフォント・行間を改善:
+    変更前: デフォルト（16px、line-height 1.5）
+    変更後: text-[15px] leading-relaxed（15px、line-height 1.75）
+    → 本文はやや小さめだが行間を広くとる。スマホで読みやすいバランス。
+
+  1b. AI バブルの最大幅を調整:
+    変更前: max-w-[85%]
+    変更後: max-w-[90%] sm:max-w-[85%]
+    → スマホでは画面幅をもう少し使い、デスクトップは現状維持。
+
+  1c. ユーザーバブルの色をやや柔らかく:
+    変更前: bg-blue-600
+    変更後: bg-blue-500
+    → 少しだけ明るく。教育アプリとして親しみやすい印象に。
+
+Step 2: Markdown レンダリングのスタイル整備
+  ファイル: app/globals.css
+
+  AI の回答内の Markdown 要素（h2, h3, ul, ol, code, pre, table）に
+  適切なスタイルを追加:
+
+  .message-content h2 { font-size: 1.1rem; font-weight: 600; margin-top: 1em; }
+  .message-content ul { padding-left: 1.25em; list-style: disc; }
+  .message-content ol { padding-left: 1.25em; list-style: decimal; }
+  .message-content code { background: #f1f5f9; padding: 0.1em 0.3em; border-radius: 4px; font-size: 0.9em; }
+  .message-content pre { background: #1e293b; color: #e2e8f0; padding: 1em; border-radius: 8px; overflow-x: auto; }
+
+Step 3: 応答待ちインジケータの改善
+  ファイル: src/features/chat/components/MessageBubble.tsx または ChatInterface.tsx
+
+  AI がストリーミング中のとき、LINE 風の「...」アニメーションバブルを表示:
+
+  <div className="flex gap-1 items-center p-4">
+    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0ms]" />
+    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:150ms]" />
+    <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:300ms]" />
+  </div>
+
+  ストリーミング開始後、テキストが流れ始めたらインジケータを非表示にする。
+
+Acceptance Criteria (Done)
+- [ ] AI メッセージの行間が広くなり、スマホで読みやすい
+- [ ] Markdown の見出し・箇条書き・コードブロックが整って表示される
+- [ ] AI 応答中に「...」バブルアニメーションが表示される
+- [ ] テキストストリーミング開始後にインジケータが消える
+- [ ] 既存のメッセージ表示（テキスト・画像・フォールバック）が壊れていない
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
+## GFX-48: 空のチャット画面にウェルカムメッセージと質問サジェストを表示する
+
+```text
+[Task Title]
+新規チャット画面に、中学生が「何を聞けばいいか」わかる
+ウェルカムメッセージとサジェストボタンを表示する
+
+Goal
+- 空のチャット画面に親しみやすいウェルカムメッセージを表示する。
+- よくある質問のサジェストボタンを配置し、タップで即座に質問を送信できるようにする。
+- 中学生が「このアプリは自分のために作られている」と感じられる体験を提供する。
+
+Background — ペルソナと課題
+- 初回アクセス時に真っ白な画面 + 入力欄だけが表示される。
+  「何を聞けばいいかわからない」→ 離脱するパターン。
+- 中学生は具体例があると行動しやすい。
+  「何でも聞いてね」よりも「二次方程式の解き方を教えて」のほうが押しやすい。
+
+制約
+- サジェストはハードコード（β版）。将来的に API 化しても良いが、今はシンプルに。
+- メッセージ送信後はウェルカム画面が消え、通常のチャット画面に切り替わる。
+- 既存の ChatInterface のメッセージ送信ロジックを壊さない。
+
+Scope
+- 変更OK:
+  - src/features/chat/components/ChatInterface.tsx（ウェルカム画面追加）
+  - 新規: src/features/chat/components/WelcomeScreen.tsx（ウェルカムコンポーネント）
+- 変更NG:
+  - app/api/chat/route.ts（サーバーロジック不変）
+
+Implementation — Step-by-Step
+
+Step 1: WelcomeScreen コンポーネントを作成する
+  ファイル: src/features/chat/components/WelcomeScreen.tsx
+
+  <div className="flex flex-col items-center justify-center h-full px-6 text-center">
+    <h2 className="text-xl font-bold text-gray-800">
+      こんにちは！何でも聞いてね 👋
+    </h2>
+    <p className="mt-2 text-sm text-gray-500">
+      勉強でわからないことがあったら、ここで質問できるよ
+    </p>
+
+    <div className="mt-8 flex flex-wrap justify-center gap-3">
+      {suggestions.map((s) => (
+        <button
+          key={s}
+          onClick={() => onSuggestionClick(s)}
+          className="rounded-full border border-gray-200 bg-white px-4 py-2
+                     text-sm text-gray-700 shadow-sm hover:bg-gray-50
+                     active:bg-gray-100 transition-colors"
+        >
+          {s}
+        </button>
+      ))}
+    </div>
+  </div>
+
+  サジェスト例（中学生向け）:
+    - "二次方程式の解き方を教えて"
+    - "英語の現在完了形って何？"
+    - "光合成のしくみを簡単に説明して"
+    - "読書感想文の書き方のコツ"
+    - "歴史の年号を覚えるコツ"
+
+Step 2: ChatInterface にウェルカム画面を組み込む
+  ファイル: src/features/chat/components/ChatInterface.tsx
+
+  messages.length === 0 && !isLoading のとき WelcomeScreen を表示。
+  サジェストボタンをタップすると、そのテキストで sendMessage を呼び出す。
+
+  onSuggestionClick の実装:
+    const handleSuggestion = (text: string) => {
+      setInput(text)
+      // 直接送信するか、入力欄にセットしてユーザーに送信させるかは UX 判断
+      // 推奨: 入力欄にセットして送信ボタンを押させる（ユーザーが編集できる）
+    }
+
+Step 3: メッセージ送信後にウェルカム画面を非表示にする
+  messages.length > 0 になった時点で通常のメッセージ表示に切り替わる。
+  特別な state 管理は不要（messages 配列の長さで判定）。
+
+Acceptance Criteria (Done)
+- [ ] 新規チャット画面（メッセージ 0 件）でウェルカムメッセージが表示される
+- [ ] サジェストボタンが 5 つ程度表示され、タップで入力欄にテキストがセットされる
+- [ ] メッセージ送信後にウェルカム画面が消え、通常のチャット表示になる
+- [ ] 会話を選択して既存チャットを開いた場合はウェルカム画面が表示されない
+- [ ] デスクトップでもモバイルでもレイアウトが崩れない
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
+## GFX-49: チャット画面の配色・トーンを教育アプリらしく親しみやすくする
+
+```text
+[Task Title]
+チャット画面全体の配色とトーンを、中学生が親しみやすいものに調整する
+
+Goal
+- gray/white/blue の事務的な配色から、教育アプリらしい温かみのある配色に調整する。
+- 「勉強しなきゃ」ではなく「使ってみたい」と思えるトーンにする。
+- 大幅なリデザインではなく、既存レイアウトを活かした配色チューニング。
+
+Background — ペルソナと課題
+- 現状は gray-50 / white / blue-600 の組み合わせで、業務システムに近い印象。
+- 中学生が日常的に使う LINE、Instagram、Duolingo 等と比較すると「堅い」。
+- フルリデザインはスコープ外。色とアクセントを調整するだけで印象は大きく変わる。
+
+制約
+- 既存のレイアウト構造は変更しない（色・フォント・影のみ調整）。
+- アクセシビリティ: WCAG AA コントラスト比を維持する。
+- 「子供っぽすぎる」配色は避ける（中学生は子供扱いを嫌う）。
+
+Scope
+- 変更OK:
+  - tailwind.config.ts（カスタムカラーの追加）
+  - app/globals.css（CSS 変数での配色定義）
+  - app/chat/page.tsx（ヘッダー・サイドバーの色）
+  - src/features/chat/components/MessageBubble.tsx（バブルの色）
+  - src/features/chat/components/ChatInterface.tsx（入力エリアの色）
+  - src/features/chat/components/ConversationSidebar.tsx（サイドバーの色）
+- 変更NG:
+  - /admin/* のページ（管理画面はスコープ外）
+  - API / ロジック層
+
+Implementation — Step-by-Step
+
+Step 1: カラーパレットを定義する
+  ファイル: tailwind.config.ts
+
+  教育アプリ向けの配色案:
+    primary: indigo-500 系（知的さ + 親しみ）
+    accent: amber-400 系（温かみ、達成感）
+    background: slate-50（やや温かみのある白）
+    surface: white（カード・バブル）
+    user-bubble: indigo-500（現状の blue-600 よりやや柔らかく）
+    ai-bubble: white + subtle border
+
+  ※ blue-600 → indigo-500 への変更は、既存の印象を壊さず微調整。
+
+Step 2: ヘッダーの色調整
+  ファイル: app/chat/page.tsx
+
+  変更前: bg-white shadow-sm（フラットで無個性）
+  変更後: bg-white border-b border-slate-100（シャドウではなくボーダーに）
+  ロゴ: text-gray-800 → text-indigo-600（ブランドカラーを効かせる）
+
+Step 3: サイドバーの色調整
+  ファイル: src/features/chat/components/ConversationSidebar.tsx
+
+  背景: bg-gray-50 → bg-slate-50
+  選択中: bg-blue-50 border-blue-500 → bg-indigo-50 border-indigo-500
+  「新規チャット」ボタン: 目立つアクセントカラー（indigo-500）
+
+Step 4: メッセージバブルの微調整
+  ファイル: src/features/chat/components/MessageBubble.tsx
+
+  ユーザーバブル: bg-blue-600 → bg-indigo-500（やや柔らかく）
+  AI バブル: bg-white border shadow-sm → bg-white border border-slate-200（統一感）
+
+Step 5: 入力エリアの色調整
+  ファイル: src/features/chat/components/ChatInterface.tsx
+
+  送信ボタン: bg-blue-600 → bg-indigo-500
+  フォーカスリング: ring-blue-400 → ring-indigo-400
+
+Risks / Follow-ups
+- 管理画面（/admin/*）は blue-600 系のまま。統一は別 GFX で検討。
+- Tailwind の色をカスタムにすると、将来のテーマ切替に備えやすい。
+  CSS 変数で定義しておくと dark mode 対応もしやすくなる（将来の拡張）。
+
+Acceptance Criteria (Done)
+- [ ] ヘッダーのロゴに indigo 系のブランドカラーが適用されている
+- [ ] ユーザーバブルと送信ボタンが indigo 系に統一されている
+- [ ] サイドバーの選択状態が indigo 系に統一されている
+- [ ] WCAG AA コントラスト比を満たしている（text on bg が 4.5:1 以上）
+- [ ] 管理画面の色は変更されていない
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+```
+
+---
+
 ## 4. 実装ロードマップサマリー
 
 ```
@@ -4476,10 +5063,23 @@ Sprint 7: GFX-41 ✅ 実装済み
   → チャット用 LLM モデルの環境変数化（CHAT_LLM_MODEL）
   → gpt-5.4 / gpt-5.4-mini への移行準備
 
-Critical (β版リリース前): GFX-42
+Critical (β版リリース前): GFX-42 ✅ 実装済み
   → allowlist に initial_role カラム追加（スタッフ事前予約）
-  → sync-user が初回ログイン時に initial_role を app_user.role に反映
-  → マイグレーション適用が必要（allowed_email に initial_role 列追加）
+
+Critical: GFX-43
+  → allowlist UI で既存エントリの initial_role を編集可能にする
+  → GFX-42 で漏れたフロントエンド対応
+
+Sprint 8: GFX-44, GFX-45
+  → GFX-44: CSV インポートの initial_role 対応強化 + ドキュメント更新
+  → GFX-45: grant ページ UX 改善・ロール管理ワークフロー案内
+
+Sprint 9 (デザイン改善): GFX-46 → GFX-49 → GFX-47 → GFX-48
+  → GFX-46: モバイルヘッダー軽量化 + 入力エリアタッチ最適化（土台）
+  → GFX-49: 配色・トーン調整（GFX-46 と同時 or 直後に適用すると統一感が出る）
+  → GFX-47: メッセージバブル可読性 + AI 応答インジケータ
+  → GFX-48: ウェルカム画面 + サジェストボタン（最後に追加）
+  → 注意: 既存機能を損なわないこと。レイアウト変更はスタイルのみ、ロジック不変。
 
 Backlog: GFX-19, GFX-20, GFX-21, GFX-22, GFX-23, GFX-24, GFX-25, GFX-26
   → 優先度に応じて順次対応

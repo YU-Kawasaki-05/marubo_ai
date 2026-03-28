@@ -137,9 +137,9 @@ pnpm format
      and tablename = 'objects'
      and policyname = 'attachments_read';
    ```
-5. Supabase Dashboard → **Project Settings** → **API** → CORS（Allowed Origins）で、少なくとも以下が許可されていることを確認
-   * `http://localhost:3000`
-   * Preview / Production のフロントエンド URL
+5. **CORS について**: Supabase API はデフォルトで全オリジンを許可しており、
+   Storage の署名 URL も CORS 制限を受けないため、手動設定は通常不要。
+   本番で画像添付時に CORS エラーが出た場合のみ対応する。
 
 > 運用ルール：アップロードは署名 URL 経由のみ（`attachments` バケットを public にしない）。
 
@@ -360,10 +360,9 @@ jobs:
    - `https://marubo-ai.vercel.app/**`
    - `http://localhost:3000/**`（開発用、残しておく）
 
-#### B. Supabase — Storage CORS の更新
-1. Supabase Dashboard > **Project Settings** > **API** > CORS
-2. Allowed Origins に本番ドメインを追加:
-   - `https://marubo-ai.vercel.app`
+#### B. Supabase — Storage CORS（通常は設定不要）
+Supabase API はデフォルトで全オリジンを許可。Storage の署名 URL も CORS 制限を受けない。
+本番で画像添付時に CORS エラーが出た場合のみ Supabase サポートに問い合わせる。
 
 #### C. Google Cloud Console — 本番ドメインの追加
 1. Google Cloud Console > **APIとサービス** > **認証情報**
