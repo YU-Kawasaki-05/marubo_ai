@@ -2,6 +2,11 @@
 @tailwind components;
 @tailwind utilities;
 
+/* iPhone のホームインジケータ領域に UI が被らないようにする */
+.pb-safe {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0.75rem));
+}
+
 :root {
   color-scheme: light;
 }
