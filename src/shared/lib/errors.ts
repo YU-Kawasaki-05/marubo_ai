@@ -40,12 +40,14 @@ export function errorResponse(requestId: string, error: AppError | Error) {
     )
   }
 
+  console.error(`[${requestId}] Unhandled error:`, error)
   return new Response(
     JSON.stringify({
       requestId,
       error: {
         code: 'INTERNAL_SERVER_ERROR',
         message: '予期しないエラーが発生しました。',
+        debug: error instanceof Error ? error.message : String(error),
       },
     }),
     {
