@@ -186,8 +186,8 @@ export function MessageBubble({ message, attachments }: MessageBubbleProps) {
       <div
         className={`max-w-[90%] sm:max-w-[85%] rounded-lg p-4 ${
           isUser
-            ? 'bg-blue-500 text-white'
-            : 'bg-white border text-gray-800 shadow-sm text-[15px] leading-relaxed'
+            ? 'bg-indigo-500 text-white'
+            : 'bg-white border border-slate-200 text-gray-800 text-[15px] leading-relaxed'
         }`}
       >
         {isUser ? (
@@ -196,7 +196,7 @@ export function MessageBubble({ message, attachments }: MessageBubbleProps) {
           textContent ? (
             <div className="whitespace-pre-wrap">{textContent}</div>
           ) : hasAttachments ? (
-            <p className="text-sm text-blue-200 italic">画像を送信しました</p>
+            <p className="text-sm text-indigo-200 italic">画像を送信しました</p>
           ) : (
             <div className="whitespace-pre-wrap">{textContent}</div>
           )
