@@ -248,4 +248,80 @@ describe('sync-user app_metadata.role (GFX-35)', () => {
 
     consoleSpy.mockRestore()
   })
+
+  // ── GFX-42: initial_role ──
+
+  it('uses initial_role=staff from allowed_email for new user', async () => {
+    mockState.authUser = {
+      id: 'auth-new-staff',
+      email: 'newstaff@example.com',
+      app_metadata: {},
+    }
+    mockState.allowedEmails.push({
+      email: 'newstaff@example.com',
+      status: 'active',
+      initial_role: 'staff',
+    })
+
+    const res = await POST(makeRequest())
+    expect(res.status).toBe(200)
+
+    const body = (await res.json()) as any
+    expect(body.data.role).toBe('staff')
+
+    // app_user が role='staff' で作成されている
+    const created = mockState.appUsers.find((u) => u.auth_uid === 'auth-new-staff')
+    expect(created?.role).toBe('staff')
+
+    // updateUserById が role='staff' で呼ばれる
+    expect(mockState.updateUserByIdCalls).toHaveLength(1)
+    expect(mockState.updateUserByIdCalls[0].attrs).toEqual({
+      app_metadata: { role: 'staff' },
+    })
+  })
+
+  it('defaults to student when initial_role is not set in allowed_email', async () => {
+    mockState.authUser = {
+      id: 'auth-no-role',
+      email: 'norole@example.com',
+      app_metadata: {},
+    }
+    mockState.allowedEmails.push({
+      email: 'norole@example.com',
+      status: 'active',
+      // initial_role not set
+    })
+
+    const res = await POST(makeRequest())
+    expect(res.status).toBe(200)
+
+    const body = (await res.json()) as any
+    expect(body.data.role).toBe('student')
+  })
+
+  it('does not overwrite existing app_user.role even if initial_role changed', async () => {
+    mockState.authUser = {
+      id: 'auth-already',
+      email: 'already@example.com',
+      app_metadata: { role: 'student' },
+    }
+    mockState.appUsers.push({
+      id: 'app-already',
+      auth_uid: 'auth-already',
+      email: 'already@example.com',
+      role: 'student',
+    })
+    mockState.allowedEmails.push({
+      email: 'already@example.com',
+      status: 'active',
+      initial_role: 'staff', // changed after first login
+    })
+
+    const res = await POST(makeRequest())
+    expect(res.status).toBe(200)
+
+    const body = (await res.json()) as any
+    // 既存ユーザーの role は変わらない（initial_role は初回のみ）
+    expect(body.data.role).toBe('student')
+  })
 })

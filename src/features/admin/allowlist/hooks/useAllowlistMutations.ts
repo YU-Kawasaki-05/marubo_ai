@@ -15,6 +15,7 @@ export function useAllowlistMutations(options: MutationOptions = {}) {
     status: AllowedEmailStatus
     label?: string | null
     notes?: string | null
+    initial_role?: 'student' | 'staff'
   }) {
     const res = await fetcher('/api/admin/allowlist', {
       method: 'POST',

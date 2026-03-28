@@ -190,7 +190,14 @@ export default function AllowlistPage() {
           {data?.map((item) => (
             <div key={item.email} className="flex items-center justify-between px-4 py-3">
               <div className="space-y-1">
-                <p className="text-sm font-semibold text-slate-900">{item.email}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm font-semibold text-slate-900">{item.email}</p>
+                  {(item as { initial_role?: string }).initial_role === 'staff' && (
+                    <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700">
+                      スタッフ
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-slate-600">label: {item.label ?? '-'}</p>
               </div>
               <div className="flex items-center gap-3">
@@ -255,13 +262,14 @@ type StatusDropdownProps = {
 }
 
 type AddStudentFormProps = {
-  onAdd: (input: { email: string; status: 'active'; label: string | null }) => Promise<void>
+  onAdd: (input: { email: string; status: 'active'; label: string | null; initial_role: 'student' | 'staff' }) => Promise<void>
   onError: (message: string) => void
 }
 
 function AddStudentForm({ onAdd, onError }: AddStudentFormProps) {
   const [email, setEmail] = useState('')
   const [label, setLabel] = useState('')
+  const [initialRole, setInitialRole] = useState<'student' | 'staff'>('student')
   const [submitting, setSubmitting] = useState(false)
   const [isOpen, setIsOpen] = useState(false)
 
@@ -282,16 +290,18 @@ function AddStudentForm({ onAdd, onError }: AddStudentFormProps) {
         email: trimmed,
         status: 'active',
         label: label.trim() || null,
+        initial_role: initialRole,
       })
       setEmail('')
       setLabel('')
+      setInitialRole('student')
       setIsOpen(false)
     } catch (err) {
       onError(err instanceof Error ? err.message : '登録に失敗しました。')
     } finally {
       setSubmitting(false)
     }
-  }, [email, label, onAdd, onError])
+  }, [email, label, initialRole, onAdd, onError])
 
   if (!isOpen) {
     return (
@@ -305,7 +315,7 @@ function AddStudentForm({ onAdd, onError }: AddStudentFormProps) {
             <line x1="12" y1="5" x2="12" y2="19" />
             <line x1="5" y1="12" x2="19" y2="12" />
           </svg>
-          生徒を個別登録
+          ユーザーを個別登録
         </button>
       </section>
     )
@@ -314,7 +324,7 @@ function AddStudentForm({ onAdd, onError }: AddStudentFormProps) {
   return (
     <section className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4 shadow-sm">
       <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-bold text-slate-700">生徒を個別登録</h3>
+        <h3 className="text-sm font-bold text-slate-700">ユーザーを個別登録</h3>
         <button
           type="button"
           onClick={() => setIsOpen(false)}
@@ -333,7 +343,7 @@ function AddStudentForm({ onAdd, onError }: AddStudentFormProps) {
             id="add-email"
             type="email"
             required
-            placeholder="student@example.com"
+            placeholder="user@example.com"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             className="w-full rounded border border-slate-300 px-3 py-2 text-sm"
@@ -354,6 +364,21 @@ function AddStudentForm({ onAdd, onError }: AddStudentFormProps) {
             disabled={submitting}
           />
         </div>
+        <div className="md:w-32">
+          <label htmlFor="add-role" className="block text-xs font-medium text-slate-600 mb-1">
+            ロール
+          </label>
+          <select
+            id="add-role"
+            value={initialRole}
+            onChange={(e) => setInitialRole(e.target.value as 'student' | 'staff')}
+            className="w-full rounded border border-slate-300 px-3 py-2 text-sm bg-white"
+            disabled={submitting}
+          >
+            <option value="student">生徒</option>
+            <option value="staff">スタッフ</option>
+          </select>
+        </div>
         <button
           type="submit"
           disabled={submitting || !email.trim()}
@@ -363,7 +388,7 @@ function AddStudentForm({ onAdd, onError }: AddStudentFormProps) {
         </button>
       </form>
       <p className="mt-2 text-xs text-slate-500">
-        登録された生徒は active ステータスで追加され、すぐにチャット・レポート等すべての機能を利用できます。
+        登録されたユーザーは active ステータスで追加されます。初回ログイン時に選択したロールが設定されます。
       </p>
     </section>
   )

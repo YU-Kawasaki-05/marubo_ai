@@ -1,8 +1,8 @@
 /** @file
  * `/api/sync-user` Route Handler
  * 機能：ログイン時にユーザーを許可リストと照合し、app_user を作成/更新する。
- *   初回作成時および app_metadata.role 未設定時に auth.app_metadata.role を
- *   自動設定し、requireAuth() を通過可能にする。
+ *   初回作成時は allowed_email.initial_role を参照して role を設定する（GFX-42）。
+ *   app_metadata.role 未設定時にもリカバリ設定し、requireAuth() を通過可能にする。
  * 入力：Authorization: Bearer <token>
  * 出力：{ appUserId, role, allowedEmailStatus }
  * 依存：Supabase Auth (admin), app_user テーブル, allowed_email テーブル
@@ -123,13 +123,14 @@ export async function POST(req: NextRequest) {
 
       appUserData = { id: existingUser.id, role: existingUser.role }
     } else {
-      // New: Insert (role defaults to 'student')
+      // New: Insert (role from allowed_email.initial_role, defaults to 'student')
+      const initialRole = allowRow.initial_role || 'student'
       const { data: newUser, error: insertError } = await supabase
         .from('app_user')
         .insert({
           auth_uid: user.id,
           email: email,
-          // role will default to 'student' via DB default
+          role: initialRole,
         })
         .select('id, role')
         .single()

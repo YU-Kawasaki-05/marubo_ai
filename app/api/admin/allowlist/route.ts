@@ -45,6 +45,7 @@ export async function POST(request: Request) {
       status: (body.status ?? 'pending') as AllowedEmailStatus,
       label: body.label ?? null,
       notes: body.notes ?? null,
+      initial_role: body.initial_role ?? undefined,
     }
 
     const data = await createAllowlistEntry(payload, staff.appUserId, requestId)
