@@ -20,6 +20,7 @@ export type AllowedEmailRow = {
   email: string
   status: AllowedEmailStatus
   label: string | null
+  initial_role: AppUserRole
   invited_at: string | null
   expires_at: string | null
   notes: string | null
@@ -32,6 +33,7 @@ export type AllowedEmailInsert = {
   email: string
   status?: AllowedEmailStatus
   label?: string | null
+  initial_role?: AppUserRole
   invited_at?: string | null
   expires_at?: string | null
   notes?: string | null

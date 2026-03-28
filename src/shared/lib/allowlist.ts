@@ -9,6 +9,7 @@
 import type {
   AllowedEmailRow,
   AllowedEmailStatus,
+  AppUserRole,
   Database,
 } from '../types/database'
 
@@ -25,17 +26,21 @@ export type AllowlistQueryParams = {
   search?: string
 }
 
+const ROLE_VALUES: AppUserRole[] = ['student', 'staff']
+
 export type CreateAllowlistPayload = {
   email: string
   status: AllowedEmailStatus
   label?: string | null
   notes?: string | null
+  initial_role?: AppUserRole
 }
 
 export type UpdateAllowlistPayload = {
   status?: AllowedEmailStatus
   label?: string | null
   notes?: string | null
+  initial_role?: AppUserRole
 }
 
 export type CsvMode = 'insert' | 'upsert'
@@ -45,6 +50,7 @@ export type CsvRecord = {
   status?: AllowedEmailStatus
   label?: string
   notes?: string
+  initial_role?: AppUserRole
   rowNumber: number
 }
 
@@ -90,6 +96,8 @@ export async function createAllowlistEntry(
   await assertNotExistingEmail(normalizedEmail)
   const now = new Date().toISOString()
 
+  const initialRole = payload.initial_role ? assertRole(payload.initial_role) : 'student'
+
   const { data, error } = await supabase
     .from('allowed_email')
     .insert({
@@ -97,6 +105,7 @@ export async function createAllowlistEntry(
       status,
       label,
       notes,
+      initial_role: initialRole,
       created_by: staffUserId,
       updated_at: now,
     })
@@ -127,7 +136,7 @@ export async function updateAllowlistEntry(
   staffUserId: string,
   requestId: string,
 ) {
-  if (!payload.status && payload.label == null && payload.notes == null) {
+  if (!payload.status && payload.label == null && payload.notes == null && payload.initial_role == null) {
     throw new AppError(400, 'ALLOWLIST_EMPTY_UPDATE', '更新項目を 1 つ以上指定してください。')
   }
 
@@ -154,14 +163,19 @@ export async function updateAllowlistEntry(
     payload.notes !== undefined ? ensureMaxLength(payload.notes, NOTES_MAX_LENGTH) : currentRow.notes
   const now = new Date().toISOString()
 
+  const updatePayload: Record<string, unknown> = {
+    status: nextStatus,
+    label,
+    notes,
+    updated_at: now,
+  }
+  if (payload.initial_role != null) {
+    updatePayload.initial_role = assertRole(payload.initial_role)
+  }
+
   const { data, error } = await supabase
     .from('allowed_email')
-    .update({
-      status: nextStatus,
-      label,
-      notes,
-      updated_at: now,
-    })
+    .update(updatePayload)
     .eq('email', normalizedEmail)
     .select('*')
     .single()
@@ -219,6 +233,8 @@ export function parseAllowlistCsv(csvText: string): CsvRecord[] {
         record.label = ensureMaxLength(value, LABEL_MAX_LENGTH) ?? undefined
       } else if (column === 'notes') {
         record.notes = ensureMaxLength(value, NOTES_MAX_LENGTH) ?? undefined
+      } else if (column === 'initial_role' && value) {
+        record.initial_role = assertRole(value as AppUserRole)
       }
     })
 
@@ -248,6 +264,7 @@ export async function importAllowlistCsv(
     status: record.status ?? 'pending',
     label: record.label ?? null,
     notes: record.notes ?? null,
+    initial_role: record.initial_role ?? 'student',
     created_by: options.staffUserId,
     updated_at: new Date().toISOString(),
   }))
@@ -344,6 +361,14 @@ function assertStatus(value: AllowedEmailStatus) {
   return normalized
 }
 
+function assertRole(value: AppUserRole): AppUserRole {
+  const normalized = value.toLowerCase() as AppUserRole
+  if (!ROLE_VALUES.includes(normalized)) {
+    throw new AppError(400, 'ROLE_INVALID', 'initial_role は student/staff のいずれかです。')
+  }
+  return normalized
+}
+
 async function assertNotExistingEmail(email: string) {
   const supabase = getSupabaseAdminClient()
   const { data } = await supabase.from('allowed_email').select('email').eq('email', email).maybeSingle()
@@ -410,6 +435,7 @@ function summarizeAllowlistRow(row: AllowedEmailRow): AllowedEmailRow {
     email: row.email,
     status: row.status,
     label: row.label,
+    initial_role: row.initial_role,
     invited_at: row.invited_at,
     expires_at: row.expires_at,
     notes: row.notes,
