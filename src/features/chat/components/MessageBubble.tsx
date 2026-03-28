@@ -184,10 +184,10 @@ export function MessageBubble({ message, attachments }: MessageBubbleProps) {
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`max-w-[85%] rounded-lg p-4 ${
+        className={`max-w-[90%] sm:max-w-[85%] rounded-lg p-4 ${
           isUser
-            ? 'bg-blue-600 text-white'
-            : 'bg-white border text-gray-800 shadow-sm'
+            ? 'bg-blue-500 text-white'
+            : 'bg-white border text-gray-800 shadow-sm text-[15px] leading-relaxed'
         }`}
       >
         {isUser ? (
@@ -202,7 +202,9 @@ export function MessageBubble({ message, attachments }: MessageBubbleProps) {
           )
         ) : (
           // AIのメッセージはMarkdownとしてレンダリング
-          <MemoizedMarkdown content={textContent} />
+          <div className="message-content">
+            <MemoizedMarkdown content={textContent} />
+          </div>
         )}
 
         {/* contentが空で、かつpartsがある場合のフォールバック（Tool calls等） */}

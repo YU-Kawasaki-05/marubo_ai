@@ -313,8 +313,10 @@ function ChatSession({
 
         {isLoading && (
           <div className="flex items-center gap-2 justify-start">
-            <div className="bg-gray-100 rounded-lg p-3 text-gray-500 animate-pulse text-sm">
-              AIが考え中...
+            <div className="bg-white border rounded-lg px-4 py-3 shadow-sm flex items-center gap-1.5">
+              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:0ms]" />
+              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:150ms]" />
+              <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce [animation-delay:300ms]" />
             </div>
             <button
               type="button"
