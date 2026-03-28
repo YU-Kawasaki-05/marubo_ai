@@ -39,14 +39,13 @@ function ChatPageContent() {
   }, [searchParams])
 
   // URL を更新するラッパー関数
+  // router.replace ではなく window.history.replaceState を使用し、
+  // Next.js の Suspense 再評価（リロード風の再マウント）を回避する
   const navigateToConversation = useCallback((id: string) => {
     setSelectedId(id)
-    if (id) {
-      router.replace(`/chat?c=${id}`, { scroll: false })
-    } else {
-      router.replace('/chat', { scroll: false })
-    }
-  }, [router])
+    const url = id ? `/chat?c=${id}` : '/chat'
+    window.history.replaceState(null, '', url)
+  }, [])
 
   // 認証トークンの取得と監視
   useEffect(() => {
@@ -105,11 +104,11 @@ function ChatPageContent() {
 
   // 新規チャットボタン専用ハンドラ（selectedId が既に '' でも強制リセット）
   const handleNewChat = useCallback(() => {
-    router.replace('/chat', { scroll: false })
+    window.history.replaceState(null, '', '/chat')
     setSelectedId('')
     setSidebarKey((prev) => prev + 1)
     setIsSidebarOpen(false)
-  }, [router])
+  }, [])
 
   return (
     <AllowlistGuard redirectToHome={false}>
