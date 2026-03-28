@@ -7,7 +7,7 @@ const csp = [
   "default-src 'self'",
   "base-uri 'none'",
   "object-src 'none'",
-  isDev ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'" : "script-src 'self'",
+  isDev ? "script-src 'self' 'unsafe-eval' 'unsafe-inline'" : "script-src 'self' 'unsafe-inline'",
   `img-src ${IMG.join(' ')}`,
   `connect-src ${CONNECT.join(' ')}`,
   "style-src 'self' 'unsafe-inline'",
