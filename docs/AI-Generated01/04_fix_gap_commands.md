@@ -105,7 +105,8 @@
 | GFX-38 | (新規) | Google OAuth ログインの導入 | 実装済み |
 | GFX-39 | (新規) | CSV インポートのファイル選択キャンセル機能 | 実装済み (PR #83) |
 | GFX-40 | (新規) | ロール別ナビゲーション（スタッフに管理画面リンク） | 実装済み (PR #84) |
-| GFX-41 | (新規) | 月次レポート生成チャンク分割 + LLM モデル環境変数化 | Sprint 7 |
+| GFX-41 | (新規) | 月次レポート生成チャンク分割 + LLM モデル環境変数化 | 実装済み |
+| GFX-42 | (新規) | allowlist に initial_role 追加（スタッフ事前予約） | Critical (β版リリース前) |
 
 ---
 
@@ -4161,6 +4162,264 @@ Acceptance Criteria (Done)
 
 ---
 
+## GFX-42: allowlist に初期ロール（initial_role）を追加し、ログイン前にスタッフ予約を可能にする
+
+```text
+[Task Title]
+allowed_email テーブルに initial_role カラムを追加し、
+許可リスト登録時にロール（student/staff）を指定できるようにする
+
+Goal
+- スタッフが /admin/allowlist で新規ユーザーを登録する際に、
+  ロール（student/staff）を事前に指定できるようにする。
+- 初回ログイン時に sync-user が initial_role を参照し、
+  app_user.role と app_metadata.role に反映する。
+- これにより「ログイン前にスタッフ権限を予約」できるようになり、
+  現状の4ステップ（登録→ログイン→grant→再ログイン）が
+  2ステップ（登録→ログイン）に短縮される。
+
+Background — なぜ必要か
+- 現状、/admin/grant でスタッフ権限を付与するには
+  対象ユーザーが app_user テーブルに存在する必要がある。
+  app_user は初回ログイン時に sync-user が作成するため、
+  「ログイン前のユーザーにスタッフ権限を設定」できない。
+- β版運用で maru.juku.maru@gmail.com にスタッフ権限を付与しようとした際、
+  app_user が存在せず「対象のユーザーが見つかりません」エラーが発生。
+- 本番運用でスタッフを追加するたびに
+  「登録→ログインさせる→grant→再ログインさせる」の4ステップが必要なのは
+  運用コストが高く、ミスも起きやすい。
+
+Context — 現在の実装
+
+  ■ allowed_email テーブル（supabase/migrations/20241204154500_allowlist_audit.sql）:
+    CREATE TABLE allowed_email (
+      email text PRIMARY KEY,
+      status text NOT NULL CHECK (status IN ('active','pending','revoked')),
+      label text,
+      invited_at timestamptz,
+      expires_at timestamptz,
+      notes text,
+      created_by uuid REFERENCES app_user(id),
+      updated_by uuid REFERENCES app_user(id),
+      updated_at timestamptz NOT NULL DEFAULT now(),
+      created_at timestamptz NOT NULL DEFAULT now(),
+      CONSTRAINT allowed_email_lowercase CHECK (email = lower(email))
+    );
+    → role に関するカラムなし
+
+  ■ sync-user（app/api/sync-user/route.ts）:
+    L125-135: 新規ユーザー作成時
+      .insert({ auth_uid: user.id, email })
+      → role は DB デフォルト 'student' 固定
+      → allowed_email の情報は status チェックにのみ使用
+
+  ■ /admin/allowlist 登録 UI:
+    個別登録フォーム: メール + ラベルのみ入力
+    CSV インポート: email, status, label カラムのみ対応
+    → role の入力欄なし
+
+  ■ /admin/grant:
+    app_user テーブルからメールで検索 → 未ログインだと 404
+    → この問題の根本原因
+
+Scope
+- 変更OK:
+  - supabase/migrations/ — 新規マイグレーション（initial_role カラム追加）
+  - src/shared/types/database.ts — AllowedEmailRow, Insert, Update に initial_role 追加
+  - app/api/sync-user/route.ts — initial_role を参照して app_user.role を設定
+  - app/api/admin/allowlist/route.ts — POST/PATCH で initial_role を受け付け
+  - src/features/admin/allowlist/components/AddStudentForm.tsx — ロール選択 UI 追加
+  - src/features/admin/allowlist/components/CsvImportForm.tsx — CSV に initial_role カラム対応
+  - docs/deployment.md — マイグレーション手順追記
+  - CLAUDE.md — 更新
+- 変更NG:
+  - app/api/admin/grant/route.ts — 既存の grant 機能はそのまま維持
+  - src/shared/lib/grant.ts — 既存の grant ロジックは変更不要
+  - middleware.ts — 変更不要
+
+Implementation — Step-by-Step
+
+Step 1: DB マイグレーション — initial_role カラムを追加する
+  ファイル: supabase/migrations/20260328000000_gfx42_initial_role.sql
+
+  ALTER TABLE allowed_email
+    ADD COLUMN initial_role text NOT NULL DEFAULT 'student'
+    CHECK (initial_role IN ('student', 'staff'));
+
+  COMMENT ON COLUMN allowed_email.initial_role IS
+    '初回ログイン時に app_user.role に設定されるロール。デフォルト student。';
+
+  → 既存レコードはすべて initial_role = 'student' になる（デフォルト値）。
+  → 手動で適用が必要（Supabase SQL Editor or pnpm db:push）。
+
+Step 2: 型定義を更新する
+  ファイル: src/shared/types/database.ts
+
+  AllowedEmailRow に追加:
+    initial_role: AppUserRole  // 'student' | 'staff'
+
+  AllowedEmailInsert に追加:
+    initial_role?: AppUserRole  // optional, defaults to 'student'
+
+  AllowedEmailUpdate に追加:
+    initial_role?: AppUserRole
+
+Step 3: sync-user で initial_role を参照する
+  ファイル: app/api/sync-user/route.ts
+
+  L63: allowRow から initial_role を取得:
+    const initialRole = allowRow.initial_role || 'student'
+
+  L125-135: 新規ユーザー作成時:
+    変更前:
+      .insert({ auth_uid: user.id, email })
+      // role は DB デフォルト 'student' 固定
+
+    変更後:
+      .insert({ auth_uid: user.id, email, role: initialRole })
+
+  L141-148: app_metadata.role の設定:
+    変更前:
+      { app_metadata: { role: newUser.role } }
+
+    変更後:
+      そのまま（newUser.role に initialRole が反映されるため変更不要）
+
+  注意:
+    - 既存ユーザー（L101-124）のロジックは変更しない。
+      既に app_user.role が設定されている場合は上書きしない（grant で変更済みの可能性）。
+    - initial_role は「初回ログイン時のみ」有効。
+      2回目以降のログインでは app_user.role（grant で変更されている可能性）を維持。
+
+Step 4: allowlist API で initial_role を受け付ける
+  ファイル: app/api/admin/allowlist/route.ts
+
+  POST（個別登録）:
+    body に initial_role?: 'student' | 'staff' を追加。
+    未指定の場合はデフォルト 'student'。
+    .insert({ email, status, label, initial_role: body.initial_role || 'student' })
+
+  PATCH（ステータス更新）:
+    initial_role の更新もサポート。
+    ただし、既にログイン済みのユーザーの initial_role を変更しても
+    app_user.role は変わらない（初回ログイン時のみ参照）。
+    → UI 上で注意書きを表示する。
+
+Step 5: 個別登録フォームにロール選択を追加する
+  ファイル: src/features/admin/allowlist/components/AddStudentForm.tsx
+
+  メール・ラベル入力欄の下に:
+    <select
+      value={initialRole}
+      onChange={(e) => setInitialRole(e.target.value)}
+      className="..."
+    >
+      <option value="student">生徒</option>
+      <option value="staff">スタッフ</option>
+    </select>
+
+  フォームタイトルを「生徒を個別登録」→「ユーザーを個別登録」に変更
+  （スタッフも登録できるようになるため）
+
+Step 6: CSV インポートで initial_role カラムに対応する
+  ファイル: src/features/admin/allowlist/components/CsvImportForm.tsx
+
+  CSV フォーマット:
+    email,status,label,initial_role
+    newstaff@example.com,active,スタッフ,staff
+    student1@example.com,active,2025年度,student
+
+  initial_role カラムが省略された行はデフォルト 'student'。
+  バリデーション: initial_role が 'student' | 'staff' 以外ならエラー。
+
+Step 7: 許可メール一覧にロール表示を追加する
+  ファイル: src/features/admin/allowlist/components/ 関連コンポーネント
+
+  一覧の各行に initial_role を表示（「生徒」or「スタッフ」バッジ）。
+  スタッフは目立つ色（例: 紫バッジ）で区別。
+
+Step 8: テストを追加・更新する
+  - sync-user テスト: initial_role = 'staff' で登録 → 初回ログイン → app_user.role = 'staff'
+  - sync-user テスト: initial_role 未設定 → 初回ログイン → app_user.role = 'student'（デフォルト）
+  - sync-user テスト: 2回目ログイン → initial_role が変更されても app_user.role は不変
+  - allowlist API テスト: initial_role の CRUD
+
+Step 9: ドキュメントを更新する
+  - CLAUDE.md: ロール管理の説明を更新
+  - docs/deployment.md: マイグレーション手順に追記
+
+■ 人間作業（Human Action Required）
+
+  マイグレーション適用:
+    Supabase SQL Editor で以下を実行:
+
+    ALTER TABLE allowed_email
+      ADD COLUMN initial_role text NOT NULL DEFAULT 'student'
+      CHECK (initial_role IN ('student', 'staff'));
+
+  または:
+    npx supabase db push --linked --include-all
+
+  適用確認:
+    SELECT column_name, data_type, column_default
+    FROM information_schema.columns
+    WHERE table_name = 'allowed_email' AND column_name = 'initial_role';
+
+    → 1行返れば OK。
+
+Risks / Follow-ups
+- 既存データへの影響:
+  ALTER TABLE ADD COLUMN ... DEFAULT 'student' は既存行に即座に反映される。
+  既にスタッフとして grant 済みのユーザーの initial_role は 'student' のままだが、
+  app_user.role は grant で 'staff' に変更済みのため影響なし。
+- initial_role と app_user.role の不一致:
+  initial_role = 'student' だが、後から grant で staff に変更されたケース。
+  initial_role は「初回ログイン時の値」であり、現在の role を示すものではない。
+  UI 上で混乱しないよう、「初期ロール」として表示する（「現在のロール」ではない）。
+- grant 機能との関係:
+  grant は引き続き「ログイン済みユーザーの role を変更する」機能として維持。
+  initial_role は「ログイン前にロールを予約する」機能。
+  両者は補完関係であり、共存する。
+
+Acceptance Criteria (Done)
+- [ ] allowed_email テーブルに initial_role カラムが存在する
+- [ ] /admin/allowlist の個別登録フォームでロール（生徒/スタッフ）を選択できる
+- [ ] CSV インポートで initial_role カラムが認識される
+- [ ] initial_role = 'staff' で登録 → 初回 Google ログイン → /admin にリダイレクトされる
+- [ ] initial_role = 'student'（デフォルト）で登録 → 初回ログイン → /chat にリダイレクトされる
+- [ ] 既にログイン済みのユーザーの initial_role を変更しても app_user.role は変わらない
+- [ ] 許可メール一覧に initial_role が表示される
+- [ ] テストが追加されている
+- [ ] `pnpm lint` / `pnpm typecheck` / `pnpm test` が通る
+
+If blocked:
+- 外部サービス/ENV/Secrets が必要で失敗する場合、値を推測して追加しない。
+- 代わりに、どのコマンドで何が不足しているかを PR 本文に明記して停止する。
+
+Quality bar:
+- 変更は最小限。既存の実装パターン・命名・型定義に合わせる。
+- スコープ外の修正は行わない。必要なら「次PR提案」としてPR本文に記載する。
+- ファイル冒頭に `/** @file ... */` コメントを付与する（既存規約準拠）。
+
+PR report format (必須):
+1) What (何を変えたか)
+2) Why (なぜ必要か — 対応する GFX-42 を明記)
+3) How to test (実行コマンドと結果)
+4) Risks / Follow-ups
+5) Human action required (手動作業の有無)
+
+Self-review (3行):
+- 1PRスコープを守れているか
+- Doneが機械判定可能か
+- ENV/外部依存で詰まりそうな点がないか
+
+Validation commands:
+- 基本: `pnpm lint` / `pnpm typecheck` / `pnpm test`
+- 可能なら: `pnpm build`（失敗時は、Secretsを推測せず不足ENVをPR本文へ記載）
+```
+
+---
+
 ## 4. 実装ロードマップサマリー
 
 ```
@@ -4216,6 +4475,11 @@ Sprint 7: GFX-41 ✅ 実装済み
   → 月次レポート生成のチャンク分割（3人/回 × 月末7日間）
   → チャット用 LLM モデルの環境変数化（CHAT_LLM_MODEL）
   → gpt-5.4 / gpt-5.4-mini への移行準備
+
+Critical (β版リリース前): GFX-42
+  → allowlist に initial_role カラム追加（スタッフ事前予約）
+  → sync-user が初回ログイン時に initial_role を app_user.role に反映
+  → マイグレーション適用が必要（allowed_email に initial_role 列追加）
 
 Backlog: GFX-19, GFX-20, GFX-21, GFX-22, GFX-23, GFX-24, GFX-25, GFX-26
   → 優先度に応じて順次対応
