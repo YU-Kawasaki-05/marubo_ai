@@ -118,15 +118,15 @@ function ChatPageContent() {
         h-[100dvh] (Dynamic Viewport Height) を使用
       */}
       <div className="flex flex-col h-[100dvh] bg-gray-50">
-        <header className="flex items-center justify-between border-b bg-white px-4 py-3 shadow-sm flex-shrink-0 z-10">
+        <header className="flex items-center justify-between border-b bg-white px-4 py-2 shadow-sm flex-shrink-0 z-10">
           <div className="flex items-center gap-2">
             {/* モバイル用ハンバーガーメニューボタン */}
             {token && (
               <button
                 type="button"
                 onClick={() => setIsSidebarOpen(true)}
-                className="p-1 text-gray-600 hover:text-gray-900 md:hidden"
-                aria-label="会話履歴を開く"
+                className="p-1 text-gray-600 hover:text-gray-900 md:hidden min-h-[44px] min-w-[44px] flex items-center justify-center"
+                aria-label="メニューを開く"
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="3" y1="6" x2="21" y2="6" />
@@ -136,30 +136,34 @@ function ChatPageContent() {
               </button>
             )}
             <h1 className="text-lg font-bold text-gray-800">Marubo AI</h1>
-            <span className="rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+            {/* Beta バッジ: デスクトップのみ表示 */}
+            <span className="hidden md:inline rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
               Beta
             </span>
           </div>
           <div className="flex items-center gap-4">
             {token && <UsageBadge token={token} refreshKey={usageRefreshKey} />}
+            {/* レポート・管理画面・ログアウト・閉じる: デスクトップのみ。モバイルはサイドバー内に配置 */}
             <Link
               href="/reports"
-              className="text-sm font-medium text-indigo-600 hover:text-indigo-800"
+              className="hidden md:inline text-sm font-medium text-indigo-600 hover:text-indigo-800"
             >
               レポート
             </Link>
             {isStaff && (
               <Link
                 href="/admin"
-                className="text-sm text-slate-500 hover:text-slate-700 transition-colors"
+                className="hidden md:inline text-sm text-slate-500 hover:text-slate-700 transition-colors"
               >
                 管理画面
               </Link>
             )}
-            <LogoutButton />
+            <span className="hidden md:inline">
+              <LogoutButton />
+            </span>
             <Link
               href="/"
-              className="text-sm font-medium text-gray-500 hover:text-gray-900"
+              className="hidden md:inline text-sm font-medium text-gray-500 hover:text-gray-900"
             >
               ✕ 閉じる
             </Link>
@@ -202,6 +206,26 @@ function ChatPageContent() {
                     onSelect={handleSelect}
                     onNewChat={handleNewChat}
                   />
+                </div>
+                {/* モバイル用ナビゲーションリンク */}
+                <div className="border-t px-4 py-3 space-y-2">
+                  <Link
+                    href="/reports"
+                    className="block text-sm text-indigo-600 hover:text-indigo-800"
+                    onClick={() => setIsSidebarOpen(false)}
+                  >
+                    レポート
+                  </Link>
+                  {isStaff && (
+                    <Link
+                      href="/admin"
+                      className="block text-sm text-slate-500 hover:text-slate-700"
+                      onClick={() => setIsSidebarOpen(false)}
+                    >
+                      管理画面
+                    </Link>
+                  )}
+                  <LogoutButton />
                 </div>
               </aside>
             </>
