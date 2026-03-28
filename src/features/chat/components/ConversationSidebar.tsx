@@ -117,13 +117,13 @@ export function ConversationSidebar({
   }
 
   return (
-    <div className="flex h-full flex-col border-r bg-gray-50">
+    <div className="flex h-full flex-col border-r bg-slate-50">
       <div className="flex items-center justify-between p-4 border-b">
         <h2 className="text-sm font-bold text-gray-700">会話履歴</h2>
         <button
           type="button"
           onClick={() => (onNewChat ? onNewChat() : onSelect(''))} // 新規作成
-          className="text-xs text-blue-600 hover:underline"
+          className="text-xs font-medium text-indigo-600 hover:underline"
         >
           新規チャット
         </button>
@@ -136,7 +136,7 @@ export function ConversationSidebar({
             <button 
               type="button"
               onClick={() => fetchConversations()}
-              className="mt-2 text-blue-500 underline"
+              className="mt-2 text-indigo-500 underline"
             >
               再試行
             </button>
@@ -150,7 +150,7 @@ export function ConversationSidebar({
                 type="button"
                 onClick={() => onSelect(conv.id)}
                 className={`w-full p-4 pr-10 text-left hover:bg-gray-100 transition-colors ${
-                  selectedId === conv.id ? 'bg-blue-50 border-l-4 border-blue-500' : ''
+                  selectedId === conv.id ? 'bg-indigo-50 border-l-4 border-indigo-500' : ''
                 }`}
               >
                 <div className="truncate text-sm font-medium text-gray-900">
@@ -187,7 +187,7 @@ export function ConversationSidebar({
           <button
             type="button"
             onClick={() => fetchConversations(nextCursor!)}
-            className="w-full p-3 text-xs text-blue-600 hover:bg-gray-100 text-center"
+            className="w-full p-3 text-xs text-indigo-600 hover:bg-gray-100 text-center"
           >
             もっと読む
           </button>

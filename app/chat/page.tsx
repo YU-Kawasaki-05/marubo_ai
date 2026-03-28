@@ -118,7 +118,7 @@ function ChatPageContent() {
         h-[100dvh] (Dynamic Viewport Height) を使用
       */}
       <div className="flex flex-col h-[100dvh] bg-gray-50">
-        <header className="flex items-center justify-between border-b bg-white px-4 py-2 shadow-sm flex-shrink-0 z-10">
+        <header className="flex items-center justify-between border-b border-slate-100 bg-white px-4 py-2 flex-shrink-0 z-10">
           <div className="flex items-center gap-2">
             {/* モバイル用ハンバーガーメニューボタン */}
             {token && (
@@ -135,9 +135,9 @@ function ChatPageContent() {
                 </svg>
               </button>
             )}
-            <h1 className="text-lg font-bold text-gray-800">Marubo AI</h1>
+            <h1 className="text-lg font-bold text-indigo-600">Marubo AI</h1>
             {/* Beta バッジ: デスクトップのみ表示 */}
-            <span className="hidden md:inline rounded bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700">
+            <span className="hidden md:inline rounded bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
               Beta
             </span>
           </div>

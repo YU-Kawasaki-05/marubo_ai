@@ -276,8 +276,8 @@ function ChatSession({
 
       {/* ドラッグ&ドロップオーバーレイ */}
       {isDragging && (
-        <div className="absolute inset-0 z-50 bg-blue-50/80 border-2 border-dashed border-blue-400 rounded-lg flex items-center justify-center pointer-events-none">
-          <p className="text-blue-600 font-medium text-lg">画像をドロップして添付</p>
+        <div className="absolute inset-0 z-50 bg-indigo-50/80 border-2 border-dashed border-indigo-400 rounded-lg flex items-center justify-center pointer-events-none">
+          <p className="text-indigo-600 font-medium text-lg">画像をドロップして添付</p>
         </div>
       )}
 
@@ -363,7 +363,7 @@ function ChatSession({
           <button
             type="button"
             onClick={attachments.openFilePicker}
-            className="p-3 min-h-[44px] min-w-[44px] flex items-center justify-center text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-3 min-h-[44px] min-w-[44px] flex items-center justify-center text-gray-500 hover:text-indigo-600 hover:bg-gray-100 rounded-lg transition-colors"
             disabled={isLoading || attachments.isUploading || attachments.isConverting}
             title="画像を添付"
           >
@@ -374,7 +374,7 @@ function ChatSession({
 
           <textarea
             ref={textareaRef}
-            className={`flex-1 p-3 text-base border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-sm max-h-32 overflow-y-auto resize-none ${isOverLimit ? 'border-red-400' : ''}`}
+            className={`flex-1 p-3 text-base border rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 shadow-sm max-h-32 overflow-y-auto resize-none ${isOverLimit ? 'border-red-400' : ''}`}
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
@@ -384,7 +384,7 @@ function ChatSession({
           />
           <button
             type="submit"
-            className="px-6 py-3 min-h-[44px] bg-blue-600 text-white font-medium rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors shadow-sm"
+            className="px-6 py-3 min-h-[44px] bg-indigo-500 text-white font-medium rounded-lg disabled:bg-gray-300 disabled:cursor-not-allowed hover:bg-indigo-600 transition-colors shadow-sm"
             disabled={isLoading || attachments.isUploading || attachments.isConverting || isOverLimit || (!input?.trim() && attachments.items.length === 0)}
           >
             {attachments.isConverting ? '変換中...' : attachments.isUploading ? '送信中...' : '送信'}
