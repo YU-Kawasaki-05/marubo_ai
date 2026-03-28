@@ -39,7 +39,6 @@
 |--------|------|-----------|-----|
 | `CHAT_LLM_MODEL` | チャット用 LLM モデル | `gpt-4o-mini` | `gpt-5.4-mini` |
 | `REPORT_LLM_MODEL` | レポート生成用 LLM モデル | `gpt-4o-mini` | `gpt-5.4` |
-| `REPORT_LLM_API_KEY` | レポート用 LLM API キー | `OPENAI_API_KEY` を使用 | `sk-...` |
 | `REPORT_MAX_TOKENS_OUT` | レポート出力トークン上限 | `2000` | `3000` |
 | `REPORT_CHUNK_SIZE` | レポート生成チャンクサイズ（1回の Cron で処理する生徒数） | `3` | `2` |
 | `REPORT_DELAY_MS` | レポート生成時の生徒間ディレイ（ms） | `5000` | `3000` |
@@ -314,14 +313,118 @@ jobs:
   * `NEXT_PUBLIC_*` のみ許可
 * **CI では build をスキップ**してもよい（Preview は Vercel 側で自動ビルド）
 
+### 初回デプロイ手順（Vercel）
+
+1. **Vercel にプロジェクトを接続する**
+   - [vercel.com](https://vercel.com) にログイン
+   - 「Add New...」 > 「Project」 > GitHub リポジトリを選択
+   - Framework Preset: `Next.js`（自動検出される）
+   - Root Directory: `.`（デフォルト）
+   - 「Deploy」はまだ押さない → 先に環境変数を設定
+
+2. **Vercel に環境変数を設定する**
+   - プロジェクト設定 > **Settings** > **Environment Variables**
+   - 以下を1つずつ追加（Environment: Production にチェック）:
+
+   | 変数名 | 値の取得先 |
+   |--------|-----------|
+   | `NEXT_PUBLIC_SUPABASE_URL` | Supabase Dashboard > Settings > API > Project URL |
+   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Dashboard > Settings > API > anon public |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Supabase Dashboard > Settings > API > service_role secret |
+   | `OPENAI_API_KEY` | OpenAI Dashboard > API Keys |
+   | `CHAT_LLM_MODEL` | `gpt-5.4-mini`（β版予定） |
+   | `REPORT_LLM_MODEL` | `gpt-5.4`（β版予定） |
+   | `GRANT_ALLOWED_EMAILS` | スタッフ権限付与を許可するメールアドレス（`;` 区切り） |
+   | `RESEND_API_KEY` | Resend Dashboard > API Keys（未設定でも動作するがメール通知なし） |
+   | `ADMIN_EMAILS` | 障害通知先メール（`;` 区切り） |
+   | `MAIL_FROM` | Resend で検証済みドメインの送信元アドレス |
+
+   > `CRON_SECRET` は Vercel が自動生成するため手動設定不要。
+
+3. **デプロイを実行する**
+   - 「Deploy」をクリック、または main ブランチに push
+   - ビルドログで `✓ Ready` が表示されれば成功
+
+4. **本番ドメインを確認する**
+   - Vercel Dashboard > プロジェクト > Settings > Domains でドメインを確認
+   - 例: `marubo-ai.vercel.app`（カスタムドメイン設定も可能）
+
+### デプロイ後の必須設定
+
+デプロイ完了後、外部サービス側で本番ドメインを設定する必要がある。
+
+#### A. Supabase — Redirect URL の更新
+1. Supabase Dashboard > **Authentication** > **URL Configuration**
+2. **Site URL** を本番ドメインに変更（例: `https://marubo-ai.vercel.app`）
+3. **Redirect URLs** に本番ドメインのワイルドカードを追加:
+   - `https://marubo-ai.vercel.app/**`
+   - `http://localhost:3000/**`（開発用、残しておく）
+
+#### B. Supabase — Storage CORS の更新
+1. Supabase Dashboard > **Project Settings** > **API** > CORS
+2. Allowed Origins に本番ドメインを追加:
+   - `https://marubo-ai.vercel.app`
+
+#### C. Google Cloud Console — 本番ドメインの追加
+1. Google Cloud Console > **APIとサービス** > **認証情報**
+2. OAuth 2.0 クライアント ID をクリック
+3. **承認済みの JavaScript 生成元** に追加:
+   - `https://marubo-ai.vercel.app`
+4. 「保存」をクリック
+
+> 詳細手順: `docs/AI-Generated01/05_google_oauth_setup_guide.md` の「本番デプロイ時のチェックリスト」参照
+
+### Supabase DB マイグレーション一覧
+
+初回デプロイ前に、以下のマイグレーションがすべて適用済みであることを確認する。
+Supabase SQL Editor で `SELECT * FROM supabase_migrations.schema_migrations ORDER BY version;` を実行し、
+すべてのバージョンが含まれていることを確認。
+
+| # | ファイル | 内容 |
+|---|---------|------|
+| 1 | `20241204154500_allowlist_audit.sql` | app_user, allowed_email, audit_allowlist テーブル |
+| 2 | `20260113000000_fe04_self_read.sql` | allowed_email の RLS ポリシー |
+| 3 | `20260127_chat_history.sql` | conversations, messages テーブル |
+| 4 | `20260226000000_be08_attachments.sql` | attachments テーブル + RLS |
+| 5 | `20260227000000_be13_audit_grant.sql` | audit_grant テーブル + RLS |
+| 6 | `20260228000000_be14_monthly_report.sql` | 月次レポートテーブル |
+| 7 | `20260302000000_be17_rate_limit.sql` | usage_counters, rate_limiter テーブル |
+| 8 | `20260314000000_gfx29_message_seq.sql` | messages に seq 列追加 |
+| 9 | `20260315000000_storage_attachments_bucket.sql` | Storage バケット + ポリシー |
+| 10 | `20260328000000_gfx42_initial_role.sql` | allowed_email に initial_role 列追加 |
+
+未適用のマイグレーションがある場合:
+```bash
+npx supabase db push --linked --include-all
+```
+
 ### デプロイ前のチェックリスト
 
+**コード品質:**
 - [ ] すべてのテストが通過（`pnpm test`）
 - [ ] TypeScript エラーがない（`pnpm typecheck`）
 - [ ] Lint エラーがない（`pnpm lint`）
-- [ ] 環境変数が Vercel に正しく設定されている
-- [ ] Supabase の RLS ポリシーが staging で検証済み
-- [ ] Resend の DNS 設定（SPF/DKIM/DMARC）が完了
+
+**Vercel:**
+- [ ] 環境変数がすべて設定されている（上記の表を参照）
+
+**Supabase:**
+- [ ] 全マイグレーションが適用済み（上記の表を参照）
+- [ ] Storage `attachments` バケットが作成済み（非公開、5MB制限）
+- [ ] RLS ポリシーが設定済み
+
+**Google OAuth:**
+- [ ] OAuth 同意画面が「本番」ステータス
+- [ ] 本番ドメインが JavaScript 生成元に追加済み
+
+**Resend（メール通知が必要な場合）:**
+- [ ] DNS 設定（SPF/DKIM/DMARC）が完了
+- [ ] `RESEND_API_KEY`, `ADMIN_EMAILS`, `MAIL_FROM` が Vercel に設定済み
+
+**データ:**
+- [ ] `/admin/allowlist` にβ版ユーザーが登録済み
+- [ ] スタッフ用メールが `initial_role = 'staff'` で登録済み
+- [ ] `GRANT_ALLOWED_EMAILS` にスタッフ権限付与者のメールが設定済み
 
 ---
 
