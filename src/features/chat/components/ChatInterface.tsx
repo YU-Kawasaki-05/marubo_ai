@@ -16,6 +16,7 @@ import { useNetworkStatus } from '../hooks/useNetworkStatus'
 import { ImagePreviewBar } from './ImagePreviewBar'
 import { MessageBubble, type MessageAttachment } from './MessageBubble'
 import { OfflineBanner } from './OfflineBanner'
+import { WelcomeScreen } from './WelcomeScreen'
 
 import { MAX_MESSAGE_LENGTH } from '@shared/lib/attachmentValidation'
 import { getSupabaseBrowserClient } from '@shared/lib/supabaseClient'
@@ -282,25 +283,8 @@ function ChatSession({
 
       {/* メッセージ表示エリア */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {messages.length === 0 && (
-          <div className="text-center text-gray-500 mt-20">
-            <h2 className="text-xl font-bold mb-2">こんにちは！</h2>
-            <p>学習に関する質問を自由にしてください。</p>
-            <div className="mt-8 grid grid-cols-1 md:grid-cols-2 gap-4 max-w-lg mx-auto text-sm text-left">
-              <button
-                onClick={() => { setInput('二次方程式の解の公式を教えて'); }}
-                className="p-3 border rounded-lg hover:bg-gray-50 transition text-gray-700"
-              >
-                「二次方程式の解の公式を教えて」
-              </button>
-              <button
-                 onClick={() => { setInput('英単語の効率的な覚え方は？'); }}
-                 className="p-3 border rounded-lg hover:bg-gray-50 transition text-gray-700"
-              >
-                「英単語の効率的な覚え方は？」
-              </button>
-            </div>
-          </div>
+        {messages.length === 0 && !isLoading && (
+          <WelcomeScreen onSuggestionClick={(text) => setInput(text)} />
         )}
 
         {messages.map((m) => (
