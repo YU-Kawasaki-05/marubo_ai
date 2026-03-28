@@ -29,7 +29,7 @@ export function useAllowlistMutations(options: MutationOptions = {}) {
     return json.data
   }
 
-  async function updateAllowedEmail(email: string, input: { status?: AllowedEmailStatus; label?: string | null; notes?: string | null }) {
+  async function updateAllowedEmail(email: string, input: { status?: AllowedEmailStatus; label?: string | null; notes?: string | null; initial_role?: 'student' | 'staff' }) {
     const res = await fetcher(`/api/admin/allowlist/${encodeURIComponent(email)}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json', ...headers },

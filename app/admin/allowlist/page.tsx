@@ -192,7 +192,7 @@ export default function AllowlistPage() {
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <p className="text-sm font-semibold text-slate-900">{item.email}</p>
-                  {(item as { initial_role?: string }).initial_role === 'staff' && (
+                  {item.initial_role === 'staff' && (
                     <span className="rounded bg-purple-100 px-1.5 py-0.5 text-xs font-medium text-purple-700">
                       スタッフ
                     </span>
@@ -201,6 +201,30 @@ export default function AllowlistPage() {
                 <p className="text-xs text-slate-600">label: {item.label ?? '-'}</p>
               </div>
               <div className="flex items-center gap-3">
+                <select
+                  aria-label="初期ロール変更"
+                  value={item.initial_role || 'student'}
+                  onChange={async (e) => {
+                    const nextRole = e.target.value as 'student' | 'staff'
+                    try {
+                      await updateAllowedEmail(item.email, { initial_role: nextRole })
+                      setFlash({ type: 'success', text: `${item.email} の初期ロールを${nextRole === 'staff' ? 'スタッフ' : '生徒'}に変更しました` })
+                      refetch()
+                    } catch (err) {
+                      const msg = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
+                      setFlash({ type: 'error', text: msg })
+                    }
+                  }}
+                  className={`appearance-none rounded border px-2 py-1 pr-7 text-xs font-medium ${
+                    item.initial_role === 'staff'
+                      ? 'bg-purple-50 border-purple-200 text-purple-700'
+                      : 'bg-slate-50 border-slate-200 text-slate-600'
+                  }`}
+                  title="初期ロール（初回ログイン時に適用）"
+                >
+                  <option value="student">生徒</option>
+                  <option value="staff">スタッフ</option>
+                </select>
                 <StatusDropdown
                   current={item.status as AllowedEmailStatus}
                   onRequestChange={(next) => {
@@ -388,7 +412,10 @@ function AddStudentForm({ onAdd, onError }: AddStudentFormProps) {
         </button>
       </form>
       <p className="mt-2 text-xs text-slate-500">
-        登録されたユーザーは active ステータスで追加されます。初回ログイン時に選択したロールが設定されます。
+        登録されたユーザーは active ステータスで追加されます。
+      </p>
+      <p className="mt-1 text-xs text-slate-400">
+        ※ ロールは初回ログイン時のみ適用されます。ログイン後の変更は権限管理ページで行えます。
       </p>
     </section>
   )

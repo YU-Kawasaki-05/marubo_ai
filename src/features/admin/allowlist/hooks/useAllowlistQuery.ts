@@ -17,6 +17,7 @@ export type AllowedEmail = {
   status: AllowedEmailStatus
   label: string | null
   notes: string | null
+  initial_role: 'student' | 'staff'
   updatedAt?: string
   updatedBy?: string | null
 }
