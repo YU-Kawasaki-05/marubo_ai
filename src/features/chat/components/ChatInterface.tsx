@@ -209,6 +209,11 @@ function ChatSession({
         pendingAttachmentsRef.current = attachmentMeta
       }
 
+      // アップロード完了後、sendMessage 前にプレビューをクリアする。
+      // sendMessage は AI ストリーミング完了まで await するため、
+      // clearAll を後に置くとプレビューが数秒〜数十秒残り続けてしまう。
+      attachments.clearAll()
+
       // sendMessage を使ってメッセージを追加・送信
       // headers はここで渡す（認証トークンを API に送る）
       // body に conversationId を含めることで、サーバー側で既存会話への追記が可能
@@ -227,9 +232,6 @@ function ChatSession({
         },
         body: Object.keys(bodyPayload).length > 0 ? bodyPayload : undefined,
       })
-
-      // アップロード完了後にプレビューをクリア
-      attachments.clearAll()
 
       // sendMessage 完了後、最新の会話一覧を取得して
       // 新しく作成された会話のIDを親に通知する
