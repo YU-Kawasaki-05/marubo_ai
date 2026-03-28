@@ -58,6 +58,17 @@ export default function CsvImportManualPage() {
                   <td className="px-4 py-2 text-slate-600">管理者用メモ</td>
                   <td className="px-4 py-2 text-slate-500">2024/04 入学</td>
                 </tr>
+                <tr>
+                  <td className="px-4 py-2 font-mono text-slate-700">initial_role</td>
+                  <td className="px-4 py-2 text-slate-600">
+                    初回ログイン時のロール<br />
+                    <span className="text-xs text-slate-400">※ 空欄の場合は student (生徒) になります</span><br />
+                    <span className="text-xs text-slate-400">※ 初回ログイン時のみ適用。ログイン後は権限管理で変更</span>
+                  </td>
+                  <td className="px-4 py-2 text-slate-500">
+                    student, staff
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -108,10 +119,11 @@ export default function CsvImportManualPage() {
             以下のテキストをコピーして、メモ帳などに貼り付けて <code>allowlist.csv</code> として保存するとテストに使えます。
           </p>
           <pre className="overflow-x-auto rounded bg-slate-800 p-4 text-sm text-slate-200">
-{`email,status,label,notes
-test1@example.com,active,鈴木一郎,バドミントン部
-test2@example.com,pending,田中花子,
-test3@example.com,revoked,佐藤健,退会済み`}
+{`email,status,label,notes,initial_role
+test1@example.com,active,鈴木一郎,バドミントン部,student
+test2@example.com,active,田中花子,スタッフ,staff
+test3@example.com,pending,佐藤健,,
+new_student@example.com,,1年A組,,`}
           </pre>
         </section>
       </div>
