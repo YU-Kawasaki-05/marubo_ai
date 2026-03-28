@@ -106,7 +106,13 @@ export default function GrantPage() {
           showAlert('完了', '付与しました。対象ユーザーは再ログインが必要です。')
         } catch (err) {
           const msg = err instanceof Error ? err.message : '予期せぬエラーが発生しました'
-          showAlert('エラー', msg)
+          const isNotFound = msg.includes('見つかりません')
+          showAlert(
+            'エラー',
+            isNotFound
+              ? `${msg}\n\nこのユーザーはまだログインしていません。許可メール一覧で初期ロールを「スタッフ」に設定してから、ログインを案内してください。`
+              : msg,
+          )
         } finally {
           setSubmitting(false)
         }
@@ -176,6 +182,17 @@ export default function GrantPage() {
         <p className="mt-1 text-sm text-slate-600">
           メールアドレスを入力してスタッフ権限を付与します。
         </p>
+        <div className="mt-3 rounded-md bg-blue-50 p-3 text-sm text-blue-700">
+          <p className="font-medium">ロール管理について</p>
+          <ul className="mt-1 list-disc pl-4 space-y-1">
+            <li>
+              <strong>新規ユーザー</strong>: <Link href="/admin/allowlist" className="underline">許可メール一覧</Link>で「スタッフ」ロールを指定して登録してください。初回ログイン時に反映されます。
+            </li>
+            <li>
+              <strong>既存ユーザー</strong>: このページで権限を変更できます。対象ユーザーが一度ログイン済みである必要があります。
+            </li>
+          </ul>
+        </div>
         <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-end">
           <div className="flex-1">
             <label htmlFor="grant-email" className="block text-sm font-medium text-slate-700">
