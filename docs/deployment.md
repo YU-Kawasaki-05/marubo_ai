@@ -37,9 +37,12 @@
 
 | 変数名 | 用途 | デフォルト | 例 |
 |--------|------|-----------|-----|
-| `REPORT_LLM_MODEL` | レポート生成用 LLM モデル | `gpt-4o-mini` | `gpt-4o` |
+| `CHAT_LLM_MODEL` | チャット用 LLM モデル | `gpt-4o-mini` | `gpt-5.4-mini` |
+| `REPORT_LLM_MODEL` | レポート生成用 LLM モデル | `gpt-4o-mini` | `gpt-5.4` |
 | `REPORT_LLM_API_KEY` | レポート用 LLM API キー | `OPENAI_API_KEY` を使用 | `sk-...` |
 | `REPORT_MAX_TOKENS_OUT` | レポート出力トークン上限 | `2000` | `3000` |
+| `REPORT_CHUNK_SIZE` | レポート生成チャンクサイズ（1回の Cron で処理する生徒数） | `3` | `2` |
+| `REPORT_DELAY_MS` | レポート生成時の生徒間ディレイ（ms） | `5000` | `3000` |
 | `MONTHLY_QUOTA` | 月間質問クォータ（生徒1人あたり） | `100` | `200` |
 | `MOCK_SUPABASE` | インメモリ DB モック有効化 | 未設定（無効） | `true` |
 | `CRON_SECRET` | Vercel Cron 認証トークン | Vercel が自動設定 | （手動設定不要） |
@@ -183,8 +186,10 @@ export const runtime = 'nodejs' // Edge Runtime は使用しない
 ### 月次レポート生成
 
 * **Vercel Cron は「月末指定 L」を保証しない**ため、**毎日 23:55 JST 実行**に変更
-* 実装で **「今日が月末か」判定**して月次処理のみ実行
-* 月末には各生徒のチャット履歴を LLM が分析し、個別学習レポートを生成・保存
+* 実装で **「月末7日前〜月末」判定**（`isReportGenerationWindow()`）して月次処理のみ実行
+* **チャンク分割**: 1回の Cron で `REPORT_CHUNK_SIZE`（デフォルト3）人ずつ処理し、Vercel タイムアウト（60秒）と OpenAI レートリミットを回避
+* 生徒間に `REPORT_DELAY_MS`（デフォルト5秒）のディレイを挿入
+* 月末7日前から毎日実行し、未生成（status != 'generated'）の生徒を順次処理
 * 生成完了後、スタッフに通知メールを送信（レポート本体は UI で閲覧）
 
 #### vercel.json
@@ -213,9 +218,13 @@ export const runtime = 'nodejs' // Edge Runtime は使用しない
 Vercel Cron (毎日 23:55 JST)
   → GET /api/reports/monthly (Authorization: Bearer CRON_SECRET)
   → verifyCronAuth() で認証
-  → isLastDayOfMonth() で月末判定
-    → 月末でない場合: { skipped: true, reason: 'not_last_day' } を返して終了
-    → 月末の場合: 全生徒のレポートを一括生成 → 完了通知メール
+  → isReportGenerationWindow() で月末7日前〜月末を判定
+    → ウィンドウ外: { skipped: true, reason: 'not_in_window' } を返して終了
+    → ウィンドウ内:
+      → 未生成の生徒を REPORT_CHUNK_SIZE 人取得
+      → 1人ずつレポート生成（生徒間に REPORT_DELAY_MS ディレイ）
+      → 全員生成済みなら完了通知メール
+      → 未完了なら翌日の Cron で残りを処理
 ```
 
 ### 手動実行（スタッフ）

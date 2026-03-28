@@ -3,7 +3,9 @@
 ## プロジェクト概要
 - 塾向け AI チャットボット（中高生対象、約20名のβ版）
 - Next.js 14 App Router + Supabase (Auth/Postgres/Storage) + Vercel AI SDK v6 + TypeScript strict
-- AI モデル: gpt-4o-mini（コスト重視）
+- AI モデル: チャット `CHAT_LLM_MODEL`（デフォルト gpt-4o-mini）、レポート `REPORT_LLM_MODEL`（デフォルト gpt-4o-mini）
+  - β版予定: チャット gpt-5.4-mini、レポート gpt-5.4
+  - 切り替えは Vercel Dashboard の環境変数のみ（コード変更不要）
 
 ## 開発ワークフロー
 - **ロードマップ**: `memo/prompt/014_Prompts_forAgent.md` に PR 単位のプロンプト集（PR-01〜PR-28 + ゲート A〜D）
@@ -134,8 +136,10 @@
 | #83 | GFX-39 | CSV インポートフォームにファイル選択キャンセルボタン追加 |
 | #84 | GFX-40 | チャット画面にスタッフ向け管理画面リンク、管理画面にチャットリンク追加 |
 | — | GFX-38 | Google OAuth ログイン導入（login ページに Google ボタン追加） |
+| — | GFX-41 | レポート生成をチャンク分割し、チャット用モデルを環境変数化 |
 
 ## 次の作業候補
+- 本番デプロイ（Vercel 環境変数設定 + Google OAuth 本番ドメイン追加）
 - Backlog の GFX（GFX-19〜26）を優先度に応じて順次対応
 - 詳細: `docs/AI-Generated01/04_fix_gap_commands.md` のロードマップ参照
 
@@ -150,7 +154,3 @@
 - `docs/situation/001_20260215.md` が unstaged deleted として常に表示される（スコープ外、無視してよい）
 - 署名 URL は有効期限あり（表示用10分、アップロード用60秒）。長時間放置で期限切れ
 - `pnpm build` は Supabase 環境変数が必要（CI/ローカルでは NEXT_PUBLIC_SUPABASE_URL 等が必要）
-- **会話 ID が URL に反映されていない**（GFX-34 で対応予定）:
-  - リロードすると新規チャットになる
-  - 新規チャットで最初のメッセージ送信後に画面がリロードされたように見える
-  - 「新規チャット」ボタンが状態リセットされない場合がある

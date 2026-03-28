@@ -4212,7 +4212,7 @@ Sprint 6: GFX-36, GFX-37, GFX-39, GFX-40 ✅ すべて実装済み
 Critical (β版リリース前): GFX-38 ✅ 実装済み
   → Google OAuth ログインの導入（Google でログインボタン追加）
 
-Sprint 7: GFX-41
+Sprint 7: GFX-41 ✅ 実装済み
   → 月次レポート生成のチャンク分割（3人/回 × 月末7日間）
   → チャット用 LLM モデルの環境変数化（CHAT_LLM_MODEL）
   → gpt-5.4 / gpt-5.4-mini への移行準備
