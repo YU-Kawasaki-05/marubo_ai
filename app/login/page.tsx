@@ -70,7 +70,7 @@ export default function LoginPage() {
 
       if (errorCode === 'ALLOWLIST_NOT_FOUND') {
         setMessageType('error')
-        setMessage('許可されていないメールアドレスです。管理者にお問い合わせください。')
+        setMessage('このメールアドレスは登録されていません。管理者にお問い合わせください。')
         await supabase.auth.signOut()
         return
       }
@@ -90,7 +90,7 @@ export default function LoginPage() {
       .catch(() => setOpenRegistration(false))
   }, [])
 
-  // OAuth コールバック検知: Google 認証後にリダイレクトされてきた場合
+  // OAuth コールバック / メール確認後のセッション検知
   const oauthHandled = useRef(false)
   useEffect(() => {
     if (oauthHandled.current) return
@@ -115,7 +115,7 @@ export default function LoginPage() {
     })
     if (error) {
       setMessageType('error')
-      setMessage('Google ログインに失敗しました。')
+      setMessage('Google ログインに失敗しました。時間をおいて再度お試しください。')
       setIsLoading(false)
     }
     // 成功時はページ遷移するため setIsLoading(false) は不要
@@ -135,7 +135,6 @@ export default function LoginPage() {
         throw error
       }
 
-      // セッションからトークンを取得
       const {
         data: { session },
       } = await supabase.auth.getSession()
@@ -151,7 +150,14 @@ export default function LoginPage() {
       const error = err as Error
       setMessageType('error')
       if (error.message.includes('Invalid login credentials')) {
-        setMessage('メールアドレスまたはパスワードが間違っています。')
+        setMessage(
+          openRegistration
+            ? 'メールアドレスまたはパスワードが間違っています。\nアカウントをお持ちでない場合は、下の「新規登録」から登録できます。'
+            : 'メールアドレスまたはパスワードが間違っています。',
+        )
+      } else if (error.message.includes('Email not confirmed')) {
+        setMessageType('warning')
+        setMessage('メールアドレスの確認が完了していません。登録時に届いたメールのリンクをクリックしてください。')
       } else {
         setMessage(`ログインエラー: ${error.message}`)
       }
@@ -161,38 +167,63 @@ export default function LoginPage() {
   }
 
   const handleSignUp = async () => {
-    setIsLoading(true)
     setMessage(null)
     const cleanEmail = email.trim()
+
+    // フィールドバリデーション（ボタンの disabled を外したため、ここで検証する）
+    if (!cleanEmail) {
+      setMessageType('error')
+      setMessage('メールアドレスを入力してください。')
+      return
+    }
+    if (!password) {
+      setMessageType('error')
+      setMessage('パスワードを入力してください。')
+      return
+    }
+    if (password.length < 6) {
+      setMessageType('error')
+      setMessage('パスワードは6文字以上で設定してください。')
+      return
+    }
+
+    setIsLoading(true)
     try {
       const { error } = await supabase.auth.signUp({
         email: cleanEmail,
         password,
+        options: {
+          // 確認メールのリンクをクリック後、このページに戻って syncAndRedirect を実行させる
+          emailRedirectTo: `${window.location.origin}/login`,
+        },
       })
       if (error) {
         throw error
       }
 
       // auto-confirm 設定の場合、signUp 直後にセッションが生成される
-      // その場合は通常ログインと同様に sync-user → リダイレクト
       const { data: { session } } = await supabase.auth.getSession()
       if (session?.access_token) {
         await syncAndRedirect(session.access_token)
         return
       }
 
-      // メール確認が必要な場合
+      // Confirm email: ON の場合（メール確認が必要）
       setMessageType('info')
-      setMessage('登録確認メールを送信しました。メール内のリンクをクリックしてからログインしてください。')
+      setMessage(
+        `${cleanEmail} に確認メールを送信しました。\n` +
+        `メール内の「メールアドレスを確認する」をクリックして登録を完了してください。\n` +
+        `確認後、このページに戻ってログインしてください。`,
+      )
     } catch (err) {
       console.error(err)
       const error = err as Error
-      if (error.message.includes('invalid')) {
+      if (error.message.includes('User already registered')) {
         setMessageType('error')
-        setMessage(`エラー: メールアドレスの形式が無効か、許可されていないドメインです。別のメールアドレス（例: student1@example.com や Gmailなど）を試してください。\n詳細: ${error.message}`)
-      } else if (error.message.includes('User already registered')) {
+        setMessage('このメールアドレスは既に登録されています。\nGoogle アカウントをお持ちの場合は「Google でログイン」をお試しください。それ以外の場合は、上のフォームからメールとパスワードでログインしてください。')
+      } else if (error.message.includes('invalid')) {
         setMessageType('error')
-        setMessage('このメールアドレスは既に登録されています。ログインしてください。')
+        setMessage('メールアドレスの形式が正しくありません。確認して再度お試しください。')
       } else {
         setMessageType('error')
         setMessage(`エラーが発生しました: ${error.message}`)
@@ -213,7 +244,12 @@ export default function LoginPage() {
       })
       if (error) throw error
       setMessageType('info')
-      setMessage('パスワードリセットメールを送信しました。メールのリンクからパスワードを再設定してください。')
+      setMessage(
+        `${trimmed} にパスワードリセットメールを送信しました。\n` +
+        `メールのリンクからパスワードを再設定してください。\n` +
+        `メールが届かない場合は迷惑メールフォルダもご確認ください。`,
+      )
+      setShowResetForm(false)
     } catch (err) {
       const error = err as Error
       setMessageType('error')
@@ -267,7 +303,7 @@ export default function LoginPage() {
               fill="#EA4335"
             />
           </svg>
-          Google でログイン
+          {isLoading ? '処理中...' : 'Google でログイン'}
         </button>
 
         {/* 区切り線 */}
@@ -317,7 +353,10 @@ export default function LoginPage() {
 
         {showResetForm ? (
           <div className="mt-4 border-t border-slate-100 pt-4">
-            <p className="mb-2 text-center text-sm font-medium text-slate-700">パスワードリセット</p>
+            <p className="mb-1 text-center text-sm font-medium text-slate-700">パスワードをお忘れの方</p>
+            <p className="mb-3 text-center text-xs text-slate-400">
+              登録済みのメールアドレスを入力してください。再設定用のメールをお送りします。
+            </p>
             <div className="space-y-3">
               <input
                 type="email"
@@ -357,15 +396,18 @@ export default function LoginPage() {
         )}
 
         {openRegistration && (
-          <div className="mt-4 border-t border-slate-100 pt-4 text-center">
-            <p className="mb-2 text-xs text-slate-500">アカウントをお持ちでない場合</p>
+          <div className="mt-4 border-t border-slate-100 pt-4">
+            <p className="mb-1 text-center text-xs font-medium text-slate-600">はじめてご利用の方</p>
+            <p className="mb-3 text-center text-xs text-slate-400">
+              上のフォームにメールアドレスとパスワード（6文字以上）を入力してから新規登録してください。確認メールが届きます。
+            </p>
             <button
               type="button"
               onClick={handleSignUp}
-              disabled={isLoading || !email || !password}
-              className="text-sm text-indigo-600 hover:underline disabled:opacity-50"
+              disabled={isLoading}
+              className="w-full rounded border border-indigo-200 py-2 text-sm font-medium text-indigo-600 hover:bg-indigo-50 disabled:opacity-50"
             >
-              新規登録 (Sign Up)
+              {isLoading ? '処理中...' : '新規登録'}
             </button>
           </div>
         )}

@@ -5165,6 +5165,34 @@ sync-user（OPEN_REGISTRATION=true、allowlist 未登録の場合）:
 | `app/login/page.tsx` | `/api/registration-status` を fetch し表示を切り替え。signup バグ修正（auto-confirm 後に `syncAndRedirect` を呼ぶ） |
 | `docs/deployment.md` | `OPEN_REGISTRATION` を任意 ENV 一覧に追記 |
 
+### Google OAuth とメール/パスワードの同一メアド利用について
+
+Supabase のデフォルト動作（automatic identity linking）により、同じメールアドレスを使う
+Google OAuth とメール/パスワードは自動的に同一ユーザーにリンクされます。
+
+```
+例: student@gmail.com でメール/パスワード登録済み
+→ 同じアドレスで「Google でログイン」しても同一 app_user に紐付く
+→ チャット履歴が引き継がれる
+```
+
+逆パターン（Google で登録済みのメアドで新規登録ボタンを押す）は
+「User already registered」エラーになるため、「Google でログイン」に誘導するメッセージを表示します。
+詳細: `docs/AI-Generated01/05_google_oauth_setup_guide.md`
+
+### ログインページ UX 改善（同時実装）
+
+| 改善点 | 変更前 | 変更後 |
+|-------|--------|--------|
+| signup ボタンの disabled | `!email \|\| !password` で無反応 | バリデーションメッセージを表示 |
+| signup の redirectTo | 未指定（Site URL に飛ぶ） | `/login` を明示 |
+| signup 成功メッセージ | 汎用的なメッセージ | メアドを含む 3 ステップ案内 |
+| ログイン失敗時のヒント | なし | オープン登録中なら新規登録を案内 |
+| 未確認メールでログイン | エラーのみ | 確認メールのクリックを促す |
+| パスワードリセット成功 | 汎用的なメッセージ | メアドを含む + 迷惑メール確認を案内 |
+| signup セクション | ボタンのみ | フォームへの記入案内 + ボタン |
+| User already registered | 「ログインしてください」 | Google ログインを案内 |
+
 ### 動作確認チェックリスト
 
 - [ ] `OPEN_REGISTRATION=false`: ログインページに新規登録ボタンがなく「招待制」と表示される
