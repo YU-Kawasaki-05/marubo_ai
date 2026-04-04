@@ -7,7 +7,8 @@
  *   - pending → 待機メッセージ表示
  *   - revoked / not-found → エラーメッセージ表示
  *   - sync-user 失敗 → /chat にフォールバック
- * 依存: supabaseClient (browser), /api/sync-user
+ * 新規登録の可否は環境変数 OPEN_REGISTRATION で制御 (/api/registration-status で取得)。
+ * 依存: supabaseClient (browser), /api/sync-user, /api/registration-status
  */
 'use client'
 
@@ -25,6 +26,7 @@ export default function LoginPage() {
   const [messageType, setMessageType] = useState<'info' | 'error' | 'warning'>('info')
   const [showResetForm, setShowResetForm] = useState(false)
   const [resetEmail, setResetEmail] = useState('')
+  const [openRegistration, setOpenRegistration] = useState<boolean | null>(null)
 
   const supabase = getSupabaseBrowserClient()
 
@@ -79,6 +81,14 @@ export default function LoginPage() {
       router.push('/chat')
     }
   }, [router, supabase.auth])
+
+  // 新規登録の可否を取得
+  useEffect(() => {
+    fetch('/api/registration-status')
+      .then((res) => res.json())
+      .then((data: { openRegistration: boolean }) => setOpenRegistration(data.openRegistration))
+      .catch(() => setOpenRegistration(false))
+  }, [])
 
   // OAuth コールバック検知: Google 認証後にリダイレクトされてきた場合
   const oauthHandled = useRef(false)
@@ -332,17 +342,24 @@ export default function LoginPage() {
           </div>
         )}
 
-        <div className="mt-4 border-t border-slate-100 pt-4 text-center">
-          <p className="mb-2 text-xs text-slate-500">アカウントをお持ちでない場合</p>
-          <button
-            type="button"
-            onClick={handleSignUp}
-            disabled={isLoading || !email || !password}
-            className="text-sm text-indigo-600 hover:underline disabled:opacity-50"
-          >
-            新規登録 (Sign Up)
-          </button>
-        </div>
+        {openRegistration && (
+          <div className="mt-4 border-t border-slate-100 pt-4 text-center">
+            <p className="mb-2 text-xs text-slate-500">アカウントをお持ちでない場合</p>
+            <button
+              type="button"
+              onClick={handleSignUp}
+              disabled={isLoading || !email || !password}
+              className="text-sm text-indigo-600 hover:underline disabled:opacity-50"
+            >
+              新規登録 (Sign Up)
+            </button>
+          </div>
+        )}
+        {openRegistration === false && (
+          <div className="mt-4 border-t border-slate-100 pt-4 text-center">
+            <p className="text-xs text-slate-400">このサービスは招待制です。</p>
+          </div>
+        )}
       </div>
     </main>
   )

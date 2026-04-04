@@ -46,6 +46,7 @@
 | `MOCK_SUPABASE` | インメモリ DB モック有効化 | 未設定（無効） | `true` |
 | `CRON_SECRET` | Vercel Cron 認証トークン | Vercel が自動設定 | （手動設定不要） |
 | `MAX_MESSAGE_LENGTH` | チャットメッセージ文字数上限 | `2000` | サーバーサイド検証で使用 |
+| `OPEN_REGISTRATION` | 新規ユーザー登録の可否 | 未設定（`false` 扱い） | `true` |
 
 ### 注意事項
 
