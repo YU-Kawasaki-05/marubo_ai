@@ -246,6 +246,52 @@ Client Secret: GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxxx
 
 ---
 
+## Automatic Identity Linking（同一メアドの Google + メール/パスワード連携）
+
+### 仕組み
+
+Supabase Auth はデフォルトで **automatic identity linking** が有効です。
+同じメールアドレスを使う Google OAuth とメール/パスワードのアカウントは自動的に同一ユーザーとして扱われます。
+
+```
+例:
+1. student@gmail.com でメール/パスワード登録 → app_user ID: abc-123
+2. 同じ student@gmail.com で Google ログイン → 自動リンク → 同じ app_user ID: abc-123
+   （チャット履歴もそのまま引き継がれる）
+```
+
+### Dashboard の設定について
+
+Supabase Dashboard → Authentication → Settings → User Signups に表示される
+**「Allow manual linking」** は、開発者が `supabase.auth.linkIdentity()` API を
+手動で呼べるかどうかの設定であり、**automatic linking とは別物**です。
+
+| 設定 | 役割 |
+|-----|------|
+| Allow manual linking（現在: OFF） | 開発者 API (`linkIdentity()`) の利用許可。OFF のまま問題なし |
+| Automatic identity linking | Supabase のデフォルト動作。設定不要 |
+
+### 注意：同一メアドで signUp しようとするとエラーになる
+
+Google で既にログインしたことがあるメールアドレスで `signUp()` を呼ぶと
+「User already registered」エラーが返ります。
+アプリ側でこのエラーが出た場合、「Google でログイン」を案内してください
+（ログインページ実装済み）。
+
+### 設定確認手順
+
+Supabase Dashboard → Authentication → Settings → User Signups で
+現在の設定が以下になっていることを確認してください:
+
+| 項目 | 推奨設定 |
+|-----|---------|
+| Allow new users to sign up | **ON**（OPEN_REGISTRATION=false 時は Vercel 環境変数側で制御） |
+| Allow manual linking | OFF のままで問題なし |
+| Allow anonymous sign-ins | OFF のままで問題なし |
+| Confirm email | **ON**（本番環境推奨） |
+
+---
+
 ## 本番デプロイ時のチェックリスト
 
 - [ ] Google Cloud Console の「承認済みの JavaScript 生成元」に本番ドメインを追加
