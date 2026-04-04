@@ -172,15 +172,29 @@ export default function LoginPage() {
       if (error) {
         throw error
       }
-      setMessage('登録確認メールを送信しました。（開発環境等でオートコンファームの場合はそのままログインボタンを押してください）')
+
+      // auto-confirm 設定の場合、signUp 直後にセッションが生成される
+      // その場合は通常ログインと同様に sync-user → リダイレクト
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.access_token) {
+        await syncAndRedirect(session.access_token)
+        return
+      }
+
+      // メール確認が必要な場合
+      setMessageType('info')
+      setMessage('登録確認メールを送信しました。メール内のリンクをクリックしてからログインしてください。')
     } catch (err) {
       console.error(err)
       const error = err as Error
       if (error.message.includes('invalid')) {
+        setMessageType('error')
         setMessage(`エラー: メールアドレスの形式が無効か、許可されていないドメインです。別のメールアドレス（例: student1@example.com や Gmailなど）を試してください。\n詳細: ${error.message}`)
       } else if (error.message.includes('User already registered')) {
+        setMessageType('error')
         setMessage('このメールアドレスは既に登録されています。ログインしてください。')
       } else {
+        setMessageType('error')
         setMessage(`エラーが発生しました: ${error.message}`)
       }
     } finally {

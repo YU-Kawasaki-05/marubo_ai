@@ -5094,25 +5094,95 @@ Backlog: GFX-19, GFX-20, GFX-21, GFX-22, GFX-23, GFX-24, GFX-25, GFX-26
 
 ## GFX-50: OPEN_REGISTRATION 環境変数で新規登録の可否を制御する（実装済み）
 
-```text
-[Task Title]
-Vercel 環境変数 OPEN_REGISTRATION で許可リスト外ユーザーの新規登録を ON/OFF 切り替える
+### 概要
 
-Goal
-- OPEN_REGISTRATION=true のとき: 許可リスト未登録でも誰でも Google OAuth / メール&パスワードでサインアップ可能
-- OPEN_REGISTRATION=false（デフォルト）: 現行の許可リスト制を維持（許可リスト外はブロック）
-- 既存ユーザーは OPEN_REGISTRATION の値にかかわらず常にログイン可能
+Vercel 環境変数 `OPEN_REGISTRATION` を `true` にするだけで、許可リスト（`allowed_email`）に未登録のユーザーでも自由にサインアップできるようになる。
+登録されたユーザーは自動的に `allowed_email` にも追記されるため、管理者が後から一覧・停止できる。
 
-Background
-- 現行は全ユーザーを allowed_email テーブルで事前登録する招待制。
-- 公開 β 拡大やオープン時には手動招待なしで登録させたい。
-- 許可リスト制に戻したい場合も Vercel ダッシュボードで OPEN_REGISTRATION を false に戻すだけ。
+### ユーザー体験の変化
 
-実装済みファイル
-- app/api/registration-status/route.ts (新規) — GET /api/registration-status → { openRegistration: boolean }
-- app/api/sync-user/route.ts — OPEN_REGISTRATION=true 時、許可リスト未登録ユーザーを student として自動登録
-- app/login/page.tsx — /api/registration-status を fetch し、openRegistration=false のとき新規登録ボタンを非表示・「招待制」表示に変更
-- docs/deployment.md — OPEN_REGISTRATION を任意 ENV 一覧に追記
+#### OPEN_REGISTRATION=false（デフォルト・招待制）
+
+```
+[ログインページ]
+  ├── Google でログイン  → 許可リスト未登録なら「許可されていません」エラー
+  ├── メールでログイン   → 既存ユーザーのみ可
+  └── （新規登録ボタンなし）「このサービスは招待制です」と表示
+```
+
+#### OPEN_REGISTRATION=true（オープン登録）
+
+```
+[ログインページ]
+  ├── Google でログイン  → 初回は自動で student 登録 → /chat にリダイレクト
+  ├── メールでログイン   → 既存ユーザーのみ可
+  └── 新規登録ボタンあり
+       ├── メアド + パスワードを入力して「新規登録」
+       ├── auto-confirm 設定の場合 → 即 student 登録 → /chat にリダイレクト
+       └── メール確認が必要な場合 → 「確認メールを送りました」→ クリック後にログイン
+```
+
+### 登録フロー詳細（OPEN_REGISTRATION=true）
+
+```
+新規ユーザー（メール/パスワード）:
+  supabase.auth.signUp()
+    → セッションあり（auto-confirm）→ sync-user 呼び出し
+    → セッションなし（要確認）→ メール確認 → ログイン → sync-user 呼び出し
+
+新規ユーザー（Google OAuth）:
+  signInWithOAuth → Google 認証 → /login にリダイレクト
+    → getSession() でセッション検出 → sync-user 呼び出し
+
+sync-user（OPEN_REGISTRATION=true、allowlist 未登録の場合）:
+  1. allowed_email に INSERT（status=active, initial_role=student, notes=open_registration）
+  2. app_user に INSERT（role=student）
+  3. auth.admin.updateUserById で app_metadata.role=student を設定
+  4. /chat へリダイレクト
+```
+
+### 既存ユーザーへの影響
+
+| ユーザー状態 | OPEN_REGISTRATION 変更前後の影響 |
+|-------------|-------------------------------|
+| allowed_email に active で登録済み | 変化なし。従来通り |
+| allowed_email に pending で登録済み | 変化なし。「承認待ち」エラーのまま |
+| allowed_email に revoked で登録済み | 変化なし。「停止中」エラーのまま |
+| allowed_email 未登録の既存 app_user | 再ログイン時に open_registration として allowed_email に追記される |
+
+### 管理者への影響
+
+- `/admin/allowlist` の一覧に open 登録者が `notes=open_registration` で表示される
+- 不審なユーザーは `revoke` ボタンで即座に停止可能（次回 sync-user で ALLOWLIST_REVOKED エラー）
+- 停止後は Supabase Auth のセッションが切れるまで約 1 時間はアクセス可能（JWT の有効期限）
+
+### 実装済みファイル
+
+| ファイル | 変更内容 |
+|---------|---------|
+| `app/api/registration-status/route.ts`（新規） | `GET /api/registration-status` → `{ openRegistration: boolean }` を返す |
+| `app/api/sync-user/route.ts` | OPEN_REGISTRATION=true 時、`allowed_email` に INSERT → `app_user` に INSERT → `app_metadata.role` 設定 |
+| `app/login/page.tsx` | `/api/registration-status` を fetch し表示を切り替え。signup バグ修正（auto-confirm 後に `syncAndRedirect` を呼ぶ） |
+| `docs/deployment.md` | `OPEN_REGISTRATION` を任意 ENV 一覧に追記 |
+
+### 動作確認チェックリスト
+
+- [ ] `OPEN_REGISTRATION=false`: ログインページに新規登録ボタンがなく「招待制」と表示される
+- [ ] `OPEN_REGISTRATION=false`: 許可リスト未登録メアドで Google ログインすると「許可されていません」エラーになる
+- [ ] `OPEN_REGISTRATION=true`: ログインページに「新規登録」ボタンが表示される
+- [ ] `OPEN_REGISTRATION=true`: 新規メアド + パスワードで登録 → `/chat` にリダイレクトされる
+- [ ] `OPEN_REGISTRATION=true`: 新規 Google アカウントでログイン → `/chat` にリダイレクトされる
+- [ ] 上記登録後、`/admin/allowlist` に `notes=open_registration` で表示される
+- [ ] `/admin/allowlist` で `revoke` すると次回ログイン時にブロックされる
+- [ ] `OPEN_REGISTRATION=true` → `false` に変更しても、`open_registration` 済みユーザーは引き続きログイン可能
+
+### 切り替え手順
+
+```
+Vercel Dashboard → Settings → Environment Variables
+→ OPEN_REGISTRATION = true（オープン登録）
+→ OPEN_REGISTRATION = false または未設定（招待制に戻す）
+→ Redeploy（Deployments → Redeploy latest）
 ```
 
 ---
