@@ -2,6 +2,8 @@
  * `/api/sync-user` Route Handler
  * 機能：ログイン時にユーザーを許可リストと照合し、app_user を作成/更新する。
  *   初回作成時は allowed_email.initial_role を参照して role を設定する（GFX-42）。
+ *   OPEN_REGISTRATION=true のとき、許可リスト未登録ユーザーを student として自動登録し
+ *   allowed_email にも追記する（管理者が後から revoke 可能）（GFX-50）。
  *   app_metadata.role 未設定時にもリカバリ設定し、requireAuth() を通過可能にする。
  * 入力：Authorization: Bearer <token>
  * 出力：{ appUserId, role, allowedEmailStatus }
@@ -63,6 +65,20 @@ export async function POST(req: NextRequest) {
         })
       }
       // オープン登録: 許可リスト未登録でも student として登録して通す
+      // allowed_email にも追記することで管理者が後から一覧・revoke できる
+      const { error: allowlistInsertError } = await supabase
+        .from('allowed_email')
+        .insert({
+          email,
+          status: 'active',
+          initial_role: 'student',
+          notes: 'open_registration',
+        })
+      if (allowlistInsertError) {
+        // 競合（同一メアドが同時登録）は無視。致命的ではないのでログのみ
+        console.error('Failed to insert open registration to allowed_email:', allowlistInsertError.message)
+      }
+
       const { data: newUser, error: insertError } = await supabase
         .from('app_user')
         .insert({ auth_uid: user.id, email, role: 'student' })
