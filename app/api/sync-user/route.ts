@@ -47,17 +47,44 @@ export async function POST(req: NextRequest) {
       .eq('email', email)
       .maybeSingle()
 
-    // Handle "Not Found" specifically
-    if (!allowedEmail) {
-      // If maybeSingle returns null (no error), it means not found
-      throw new AppError(403, 'ALLOWLIST_NOT_FOUND', '許可されていないメールアドレスです。', {
-        email,
-      })
-    }
-
     if (allowlistError) {
       console.error('Allowlist Error:', allowlistError)
       throw new AppError(500, 'INTERNAL_SERVER_ERROR', '許可リストの確認中にエラーが発生しました。')
+    }
+
+    // OPEN_REGISTRATION=true のとき、許可リスト未登録ユーザーをそのまま通す
+    const openRegistration = process.env.OPEN_REGISTRATION === 'true'
+
+    if (!allowedEmail) {
+      if (!openRegistration) {
+        // 許可リスト制: 未登録ユーザーはブロック
+        throw new AppError(403, 'ALLOWLIST_NOT_FOUND', '許可されていないメールアドレスです。', {
+          email,
+        })
+      }
+      // オープン登録: 許可リスト未登録でも student として登録して通す
+      const { data: newUser, error: insertError } = await supabase
+        .from('app_user')
+        .insert({ auth_uid: user.id, email, role: 'student' })
+        .select('id, role')
+        .single()
+
+      if (insertError) throw new Error(insertError.message)
+      if (!newUser) throw new Error('Failed to create user')
+
+      const { error: metaError } = await supabase.auth.admin.updateUserById(
+        user.id,
+        { app_metadata: { role: 'student' } },
+      )
+      if (metaError) {
+        console.error('Failed to set app_metadata.role:', metaError.message)
+      }
+
+      return jsonResponse(requestId, {
+        appUserId: newUser.id,
+        role: 'student',
+        allowedEmailStatus: 'open',
+      })
     }
 
     const allowRow = allowedEmail as AllowedEmailRow

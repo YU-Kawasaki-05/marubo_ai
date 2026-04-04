@@ -5081,10 +5081,38 @@ Sprint 9 (デザイン改善): GFX-46 → GFX-49 → GFX-47 → GFX-48
   → GFX-48: ウェルカム画面 + サジェストボタン（最後に追加）
   → 注意: 既存機能を損なわないこと。レイアウト変更はスタイルのみ、ロジック不変。
 
+Sprint 10 (認証・登録制御): GFX-50
+  → GFX-50: OPEN_REGISTRATION 環境変数で新規登録の可否を制御する
+
 Backlog: GFX-19, GFX-20, GFX-21, GFX-22, GFX-23, GFX-24, GFX-25, GFX-26
   → 優先度に応じて順次対応
 
 ゲート G: 全スプリント完了後の最終受け入れ
+```
+
+---
+
+## GFX-50: OPEN_REGISTRATION 環境変数で新規登録の可否を制御する（実装済み）
+
+```text
+[Task Title]
+Vercel 環境変数 OPEN_REGISTRATION で許可リスト外ユーザーの新規登録を ON/OFF 切り替える
+
+Goal
+- OPEN_REGISTRATION=true のとき: 許可リスト未登録でも誰でも Google OAuth / メール&パスワードでサインアップ可能
+- OPEN_REGISTRATION=false（デフォルト）: 現行の許可リスト制を維持（許可リスト外はブロック）
+- 既存ユーザーは OPEN_REGISTRATION の値にかかわらず常にログイン可能
+
+Background
+- 現行は全ユーザーを allowed_email テーブルで事前登録する招待制。
+- 公開 β 拡大やオープン時には手動招待なしで登録させたい。
+- 許可リスト制に戻したい場合も Vercel ダッシュボードで OPEN_REGISTRATION を false に戻すだけ。
+
+実装済みファイル
+- app/api/registration-status/route.ts (新規) — GET /api/registration-status → { openRegistration: boolean }
+- app/api/sync-user/route.ts — OPEN_REGISTRATION=true 時、許可リスト未登録ユーザーを student として自動登録
+- app/login/page.tsx — /api/registration-status を fetch し、openRegistration=false のとき新規登録ボタンを非表示・「招待制」表示に変更
+- docs/deployment.md — OPEN_REGISTRATION を任意 ENV 一覧に追記
 ```
 
 ---
