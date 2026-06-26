@@ -20,7 +20,6 @@ describe('Supabase admin client mock', () => {
       expires_at: null,
       notes: null,
       created_by: null,
-      updated_by: null,
       updated_at: new Date().toISOString(),
       created_at: new Date().toISOString(),
     })

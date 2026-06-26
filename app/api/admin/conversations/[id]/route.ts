@@ -15,14 +15,14 @@ import { requireStaff } from '../../../../../src/shared/lib/requireStaff'
 import { jsonResponse } from '../../../../../src/shared/lib/response'
 
 type RouteContext = {
-  params: { id: string }
+  params: Promise<{ id: string }>
 }
 
 export async function GET(request: Request, context: RouteContext) {
   const requestId = generateRequestId('admin_conv_detail')
   try {
     await requireStaff(request)
-    const { id } = context.params
+    const { id } = await context.params
     const data = await getConversationDetail(id)
     return jsonResponse(requestId, data)
   } catch (error) {

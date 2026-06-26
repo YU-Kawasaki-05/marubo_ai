@@ -136,7 +136,7 @@ describe('QA-09: /api/admin/conversations 認可テスト', () => {
   it('GET detail: staff は任意の生徒の会話詳細を取得できる', async () => {
     const res = await detailGet(
       new Request(`${BASE_URL}/auth-conv-1`, { method: 'GET', headers: STAFF_HEADER }),
-      { params: { id: 'auth-conv-1' } },
+      { params: Promise.resolve({ id: 'auth-conv-1' }) },
     )
     const body = await parseJson(res)
     expect(res.status).toBe(200)
@@ -148,7 +148,7 @@ describe('QA-09: /api/admin/conversations 認可テスト', () => {
   it('GET detail: staff は別の生徒の会話詳細も取得できる', async () => {
     const res = await detailGet(
       new Request(`${BASE_URL}/auth-conv-2`, { method: 'GET', headers: STAFF_HEADER }),
-      { params: { id: 'auth-conv-2' } },
+      { params: Promise.resolve({ id: 'auth-conv-2' }) },
     )
     const body = await parseJson(res)
     expect(res.status).toBe(200)
@@ -161,7 +161,7 @@ describe('QA-09: /api/admin/conversations 認可テスト', () => {
   it('GET detail: 認証なし → 401 UNAUTHORIZED', async () => {
     const res = await detailGet(
       new Request(`${BASE_URL}/auth-conv-1`, { method: 'GET' }),
-      { params: { id: 'auth-conv-1' } },
+      { params: Promise.resolve({ id: 'auth-conv-1' }) },
     )
     const body = await parseJson(res)
     expect(res.status).toBe(401)
@@ -176,7 +176,7 @@ describe('QA-09: /api/admin/conversations 認可テスト', () => {
         method: 'GET',
         headers: STUDENT_HEADER,
       }),
-      { params: { id: 'auth-conv-1' } },
+      { params: Promise.resolve({ id: 'auth-conv-1' }) },
     )
     const body = await parseJson(res)
     expect(res.status).toBe(403)
@@ -191,7 +191,7 @@ describe('QA-09: /api/admin/conversations 認可テスト', () => {
         method: 'GET',
         headers: { Authorization: 'Bearer invalid-token-xyz' },
       }),
-      { params: { id: 'auth-conv-1' } },
+      { params: Promise.resolve({ id: 'auth-conv-1' }) },
     )
     const body = await parseJson(res)
     expect(res.status).toBe(401)

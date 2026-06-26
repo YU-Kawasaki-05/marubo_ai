@@ -152,29 +152,29 @@ describe('DELETE /api/conversations/[id]', () => {
   })
 
   it('returns 401 when authorization header is missing', async () => {
-    const res = await DELETE(makeRequest('conv-1'), { params: { id: 'conv-1' } })
+    const res = await DELETE(makeRequest('conv-1'), { params: Promise.resolve({ id: 'conv-1' }) })
     expect(res.status).toBe(401)
   })
 
   it('returns 401 when token is invalid', async () => {
-    const res = await DELETE(makeRequest('conv-1', 'bad-token'), { params: { id: 'conv-1' } })
+    const res = await DELETE(makeRequest('conv-1', 'bad-token'), { params: Promise.resolve({ id: 'conv-1' }) })
     expect(res.status).toBe(401)
   })
 
   it('returns 404 when conversation does not exist', async () => {
-    const res = await DELETE(makeRequest('nonexistent', 'student-token'), { params: { id: 'nonexistent' } })
+    const res = await DELETE(makeRequest('nonexistent', 'student-token'), { params: Promise.resolve({ id: 'nonexistent' }) })
     expect(res.status).toBe(404)
   })
 
   it('returns 403 when trying to delete another user conversation', async () => {
-    const res = await DELETE(makeRequest('conv-2', 'student-token'), { params: { id: 'conv-2' } })
+    const res = await DELETE(makeRequest('conv-2', 'student-token'), { params: Promise.resolve({ id: 'conv-2' }) })
     expect(res.status).toBe(403)
   })
 
   it('returns 204 and deletes the conversation on success', async () => {
     expect(mockState.conversations).toHaveLength(2)
 
-    const res = await DELETE(makeRequest('conv-1', 'student-token'), { params: { id: 'conv-1' } })
+    const res = await DELETE(makeRequest('conv-1', 'student-token'), { params: Promise.resolve({ id: 'conv-1' }) })
     expect(res.status).toBe(204)
 
     // 会話が削除されたことを確認
@@ -186,7 +186,7 @@ describe('DELETE /api/conversations/[id]', () => {
 
   it('owner can delete their own conversation (other user cannot)', async () => {
     // other-token の所有者は conv-2 を削除できる
-    const res = await DELETE(makeRequest('conv-2', 'other-token'), { params: { id: 'conv-2' } })
+    const res = await DELETE(makeRequest('conv-2', 'other-token'), { params: Promise.resolve({ id: 'conv-2' }) })
     expect(res.status).toBe(204)
     expect(mockState.conversations.find((c) => c.id === 'conv-2')).toBeUndefined()
   })
