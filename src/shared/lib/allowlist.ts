@@ -9,6 +9,7 @@
 import type {
   AllowedEmailRow,
   AllowedEmailStatus,
+  AllowedEmailUpdate,
   AppUserRole,
   Database,
 } from '../types/database'
@@ -163,14 +164,12 @@ export async function updateAllowlistEntry(
     payload.notes !== undefined ? ensureMaxLength(payload.notes, NOTES_MAX_LENGTH) : currentRow.notes
   const now = new Date().toISOString()
 
-  const updatePayload: Record<string, unknown> = {
+  const updatePayload: AllowedEmailUpdate = {
     status: nextStatus,
     label,
     notes,
     updated_at: now,
-  }
-  if (payload.initial_role != null) {
-    updatePayload.initial_role = assertRole(payload.initial_role)
+    ...(payload.initial_role != null ? { initial_role: assertRole(payload.initial_role) } : {}),
   }
 
   const { data, error } = await supabase

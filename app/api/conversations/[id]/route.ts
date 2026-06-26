@@ -17,7 +17,7 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export async function GET(
   req: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const authHeader = req.headers.get('Authorization')
@@ -41,7 +41,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const conversationId = params.id
+    const { id: conversationId } = await params
 
     // 会話ヘッダ取得（ユーザー一致を確認）
     const { data: conv, error: convError } = await supabase
@@ -119,7 +119,7 @@ export async function GET(
 
 export async function DELETE(
   req: Request,
-  { params }: { params: { id: string } },
+  { params }: { params: Promise<{ id: string }> },
 ) {
   try {
     const authHeader = req.headers.get('Authorization')
@@ -143,7 +143,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const conversationId = params.id
+    const { id: conversationId } = await params
 
     // 会話の所有者チェック
     const { data: conv, error: convError } = await supabase

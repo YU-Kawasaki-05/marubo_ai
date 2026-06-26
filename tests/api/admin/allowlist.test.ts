@@ -79,7 +79,7 @@ describe('/api/admin/allowlist (mock supabase)', () => {
       headers: STAFF_HEADER,
       body: JSON.stringify({ status: 'revoked', notes: '退会' }),
     })
-    const res = await allowlistPatch(patchReq, { params: { email: 'change@example.com' } })
+    const res = await allowlistPatch(patchReq, { params: Promise.resolve({ email: 'change@example.com' }) })
     const body = await parseJson(res)
     expect(res.status).toBe(200)
     expect(body.data.status).toBe('revoked')
@@ -136,7 +136,7 @@ describe('/api/admin/allowlist (mock supabase)', () => {
             headers: init.headers,
             body: init.body,
           }),
-          { params: { email } },
+          { params: Promise.resolve({ email }) },
         )
       }
       throw new Error(`Unhandled request ${url}`)

@@ -265,7 +265,7 @@ async function getConversationDetail(conversationId: string) {
       method: 'GET',
       headers: { Authorization: 'Bearer student-token' },
     }),
-    { params: { id: conversationId } },
+    { params: Promise.resolve({ id: conversationId }) },
   )
 }
 

@@ -15,7 +15,7 @@ import { requireStaff } from '../../../../../src/shared/lib/requireStaff'
 import { jsonResponse } from '../../../../../src/shared/lib/response'
 
 type RouteContext = {
-  params: { email: string }
+  params: Promise<{ email: string }>
 }
 
 export async function PATCH(request: Request, context: RouteContext) {
@@ -23,7 +23,8 @@ export async function PATCH(request: Request, context: RouteContext) {
   try {
     const staff = await requireStaff(request)
     const body = await parseJsonBody<UpdateAllowlistPayload>(request)
-    const emailParam = decodeURIComponent(context.params.email || '')
+    const { email } = await context.params
+    const emailParam = decodeURIComponent(email || '')
     const data = await updateAllowlistEntry(emailParam, body, staff.appUserId, requestId)
     return jsonResponse(requestId, data)
   } catch (error) {

@@ -233,7 +233,7 @@ describe('chat conversations integration', () => {
         method: 'GET',
         headers: { Authorization: 'Bearer student-token' },
       }),
-      { params: { id: conversationId! } },
+      { params: Promise.resolve({ id: conversationId! }) },
     )
     const detailBody = await parseJson(detailRes)
     expect(detailRes.status).toBe(200)
@@ -272,7 +272,7 @@ describe('chat conversations integration', () => {
 
     const noAuthDetail = await conversationDetailGet(
       new Request('http://localhost/api/conversations/conv-1', { method: 'GET' }),
-      { params: { id: 'conv-1' } },
+      { params: Promise.resolve({ id: 'conv-1' }) },
     )
     expect(noAuthDetail.status).toBe(401)
 
@@ -281,7 +281,7 @@ describe('chat conversations integration', () => {
         method: 'GET',
         headers: { Authorization: 'Bearer invalid-token' },
       }),
-      { params: { id: 'conv-1' } },
+      { params: Promise.resolve({ id: 'conv-1' }) },
     )
     expect(invalidDetail.status).toBe(401)
   })
@@ -335,7 +335,7 @@ describe('chat conversations integration', () => {
         method: 'GET',
         headers: { Authorization: 'Bearer student-token' },
       }),
-      { params: { id: conversationId! } },
+      { params: Promise.resolve({ id: conversationId! }) },
     )
     const detailBody = await parseJson(detailRes)
     expect(detailRes.status).toBe(200)
@@ -416,7 +416,7 @@ describe('chat conversations integration', () => {
         method: 'GET',
         headers: { Authorization: 'Bearer student-token' },
       }),
-      { params: { id: conversationId! } },
+      { params: Promise.resolve({ id: conversationId! }) },
     )
     const detailBody = await parseJson(detailRes)
     expect(detailRes.status).toBe(200)
@@ -505,7 +505,7 @@ describe('chat conversations integration', () => {
         method: 'GET',
         headers: { Authorization: 'Bearer student-token' },
       }),
-      { params: { id: conversationId! } },
+      { params: Promise.resolve({ id: conversationId! }) },
     )
     const detailBody = await parseJson(detailRes)
 
@@ -715,7 +715,7 @@ describe('chat conversations integration', () => {
         method: 'GET',
         headers: { Authorization: 'Bearer student-token' },
       }),
-      { params: { id: conversationId! } },
+      { params: Promise.resolve({ id: conversationId! }) },
     )
     const detailBody = await parseJson(detailRes)
     expect(detailRes.status).toBe(200)

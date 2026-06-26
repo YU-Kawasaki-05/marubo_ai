@@ -24,7 +24,7 @@ function getList(query = '') {
 function getDetail(id: string) {
   return detailGet(
     new Request(`${BASE_URL}/${id}`, { method: 'GET', headers: STAFF_HEADER }),
-    { params: { id } },
+    { params: Promise.resolve({ id }) },
   )
 }
 
