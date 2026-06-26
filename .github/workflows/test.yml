@@ -10,6 +10,8 @@ jobs:
   test:
     name: Lint, Typecheck & Test
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     steps:
       - name: Checkout code
@@ -38,3 +40,7 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: Audit dependencies
+        run: pnpm audit --prod
+        continue-on-error: true
