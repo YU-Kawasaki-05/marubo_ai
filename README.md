@@ -52,8 +52,8 @@
 # 前提：WSL (Ubuntu) + Node.js LTS + pnpm@9
 
 # リポジトリクローン
-git clone <repo-url>
-cd <repo>
+git clone https://github.com/YU-Kawasaki-05/marubo_ai.git
+cd marubo_ai
 
 # 依存関係インストール
 pnpm i
@@ -187,8 +187,8 @@ nvm install --lts
 npm i -g pnpm@9
 
 # プロジェクト
-git clone <repo-url>
-cd <repo>
+git clone https://github.com/YU-Kawasaki-05/marubo_ai.git
+cd marubo_ai
 pnpm i
 cp .env.example .env.local
 ```

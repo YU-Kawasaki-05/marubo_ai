@@ -108,14 +108,16 @@ function AccountStatusBannerInner() {
           </div>
 
           {/* お問い合わせリンク（共通） */}
-          <div className="mt-2 text-sm md:mt-0 md:whitespace-nowrap">
-            <a
-              href="mailto:support@example.com" // 実際の連絡先に変更してください
-              className={`underline hover:no-underline ${current.textColor}`}
-            >
-              管理者へ問い合わせる →
-            </a>
-          </div>
+          {process.env.NEXT_PUBLIC_SUPPORT_EMAIL && (
+            <div className="mt-2 text-sm md:mt-0 md:whitespace-nowrap">
+              <a
+                href={`mailto:${process.env.NEXT_PUBLIC_SUPPORT_EMAIL}`}
+                className={`underline hover:no-underline ${current.textColor}`}
+              >
+                管理者へ問い合わせる →
+              </a>
+            </div>
+          )}
         </div>
       </div>
     </div>

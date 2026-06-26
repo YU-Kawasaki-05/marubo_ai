@@ -17,8 +17,8 @@
 
 | メールアドレス | 役割 |
 |--------------|------|
-| `maru.juku.maru@gmail.com` | 管理者（塾長） |
-| `yuu.kw5.sea@gmail.com` | テスト用・運用補助 |
+| `owner@example.com` | 管理者（塾長） |
+| `admin@example.com` | テスト用・運用補助 |
 
 付与可能者は環境変数 `GRANT_ALLOWED_EMAILS` で管理する（`;` 区切り）。  
 この環境変数に含まれていないスタッフは、権限付与 UI にアクセスできない。
@@ -146,7 +146,7 @@
   "data": {
     "staffUsers": [
       {
-        "email": "maru.juku.maru@gmail.com",
+        "email": "owner@example.com",
         "displayName": null,
         "role": "staff",
         "grantedAt": "2026-01-15T10:00:00Z"
@@ -155,7 +155,7 @@
     "auditLog": [
       {
         "id": "audit_123",
-        "operatorEmail": "maru.juku.maru@gmail.com",
+        "operatorEmail": "owner@example.com",
         "targetEmail": "staff3@example.com",
         "action": "grant",
         "createdAt": "2026-02-10T14:00:00Z"
@@ -201,7 +201,7 @@ alter table audit_grant enable row level security;
 
 | 変数 | 用途 | 例 |
 |------|------|-----|
-| `GRANT_ALLOWED_EMAILS` | 権限付与が可能なスタッフのメールアドレス（`;` 区切り） | `maru.juku.maru@gmail.com;yuu.kw5.sea@gmail.com` |
+| `GRANT_ALLOWED_EMAILS` | 権限付与が可能なスタッフのメールアドレス（`;` 区切り） | `owner@example.com;admin@example.com` |
 
 ---
 
