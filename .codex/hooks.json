@@ -1,0 +1,67 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CODEX_PROJECT_DOC_PATH:-$PWD}/.codex/hooks/session_start.py\"",
+            "statusMessage": "Loading workspace conventions",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CODEX_PROJECT_DOC_PATH:-$PWD}/.codex/hooks/user_prompt_safety.py\"",
+            "statusMessage": "Checking prompt safety",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CODEX_PROJECT_DOC_PATH:-$PWD}/.codex/hooks/check_bash_command.py\"",
+            "statusMessage": "Checking Bash safety",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CODEX_PROJECT_DOC_PATH:-$PWD}/.codex/hooks/post_bash_review.py\"",
+            "statusMessage": "Reviewing Bash output",
+            "timeout": 20
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"${CODEX_PROJECT_DOC_PATH:-$PWD}/.codex/hooks/stop_summary.py\"",
+            "statusMessage": "Writing stop summary",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

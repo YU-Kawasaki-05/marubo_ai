@@ -1,0 +1,4 @@
+display_name: Connect Actions
+short_description: Execute real actions in external tools via connectors
+policy:
+  allow_implicit_invocation: false
