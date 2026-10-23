@@ -1,0 +1,25 @@
+# pnpm 10.6+ / 11 以降は package.json の "pnpm" フィールドを読まないため、ここにも置く（marujuku-slack と同じ構成）。
+# 古い pnpm 向けに package.json 側の overrides も残している。両方を同じ値に保つこと。
+# packages はリポジトリ直下だけ。これが無いと CI の pnpm 9 が「packages field missing or empty」で止まる。
+packages:
+  - '.'
+
+allowBuilds:
+  esbuild: true
+  sharp: true
+  unrs-resolver: true
+  # supabase CLI の postinstall はバイナリを取りに行く。ビルドとテストには不要
+  supabase: false
+
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - unrs-resolver
+
+# sharp <0.35.5 は GHSA-2464-fhr4-w9xw（Next の画像最適化経由の RCE・2026-10-22）の影響下にある。
+# postcss・nanoid・source-map-js は next 経由で入る古い版に high の勧告がある（pnpm audit --prod、2026-10-23）
+overrides:
+  postcss: ^8.5.26
+  nanoid: ^3.3.18
+  source-map-js: ^1.2.2
+  sharp: ^0.35.5

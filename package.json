@@ -24,7 +24,7 @@
     "encoding-japanese": "^2.2.0",
     "heic2any": "^0.0.4",
     "katex": "^0.16.10",
-    "next": "15.5.19",
+    "next": "15.5.28",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^9.0.1",
@@ -48,7 +48,7 @@
     "autoprefixer": "^10.4.19",
     "dotenv": "^17.2.3",
     "eslint": "^8.57.0",
-    "eslint-config-next": "15.5.19",
+    "eslint-config-next": "15.5.28",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.29.1",
     "eslint-plugin-unused-imports": "^3.2.0",
@@ -62,7 +62,10 @@
   },
   "pnpm": {
     "overrides": {
-      "postcss": ">=8.5.10"
+      "postcss": "^8.5.26",
+      "sharp": "^0.35.5",
+      "nanoid": "^3.3.18",
+      "source-map-js": "^1.2.2"
     }
   }
 }
